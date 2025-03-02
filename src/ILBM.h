@@ -38,9 +38,10 @@ public:
 #pragma pack(pop)
 
 enum Result {
-    Ok = 0,
-    IOError = 1,
-    ParsingError = 2,
+    Result_Ok = 0,
+    Result_IOError = 1,
+    Result_ParsingError = 2,
+    Result_Unsupported = 3,
 };
 
 enum FileType {
@@ -65,6 +66,8 @@ private:
     int16_t m_page_height;
 
 public:
+    static const uint32_t SIZE = 20;
+
     BMHD() :
         m_width(0),
         m_height(0),
@@ -109,7 +112,7 @@ public:
     inline const std::vector<uint8_t>& data() const { return m_data; }
     inline const std::vector<bool>& mask() const { return m_mask; }
 
-    Result read(MemoryReader& reader, FileType file_type, const BMHD *bmhd);
+    Result read(MemoryReader& reader, FileType file_type, const BMHD& bmhd);
 };
 
 class CMAP {
@@ -129,6 +132,8 @@ private:
     uint32_t m_viewport_mode;
 
 public:
+    static const uint32_t SIZE = 4;
+
     CAMG() : m_viewport_mode(0) {}
 
     inline uint32_t viewport_mode() const { return m_viewport_mode; }
@@ -144,6 +149,8 @@ private:
     uint8_t m_high;
 
 public:
+    static const uint32_t SIZE = 8;
+
     CRNG() :
         m_rate(0),
         m_flags(0),
@@ -167,6 +174,8 @@ private:
     uint32_t m_delay_usec;
 
 public:
+    static const uint32_t SIZE = 14;
+
     CCRT() :
         m_direction(0),
         m_low(0),
@@ -194,6 +203,8 @@ private:
     std::vector<CCRT> m_ccrts;
 
 public:
+    static const uint32_t MIN_SIZE = BMHD::SIZE + 12;
+
     ILBM() :
         m_file_type(FileType_ILBM),
         m_header{},
