@@ -1,0 +1,5 @@
+/build
+/tmp
+.*
+!.gitignore
+!/build/.gitignore
