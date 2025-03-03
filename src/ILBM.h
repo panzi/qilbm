@@ -21,7 +21,6 @@ private:
 public:
     inline Color() : m_r(0), m_g(0), m_b(0) {}
     inline Color(uint8_t r, uint8_t g, uint8_t b) : m_r(r), m_g(g), m_b(b) {}
-    inline Color(const Color& color) : m_r(color.m_r), m_g(color.m_g), m_b(color.m_b) {}
 
     inline uint8_t r() const { return m_r; };
     inline uint8_t g() const { return m_g; };
@@ -46,7 +45,7 @@ enum Result {
 
 enum FileType {
     FileType_ILBM,
-    FileType_BPM,
+    FileType_PBM,
 };
 
 class BMHD {
@@ -113,6 +112,9 @@ public:
     inline const std::vector<bool>& mask() const { return m_mask; }
 
     Result read(MemoryReader& reader, FileType file_type, const BMHD& bmhd);
+
+protected:
+    void decode_line(const std::vector<uint8_t>& line, uint8_t mask, uint16_t width, size_t plane_len, size_t num_planes, FileType file_type);
 };
 
 class CMAP {

@@ -12,12 +12,12 @@ namespace qilbm {
 
 class MemoryReader {
 private:
-    uint8_t *m_data;
+    const uint8_t *m_data;
     size_t m_size;
     size_t m_offset;
 
 public:
-    inline MemoryReader(uint8_t data[], size_t size) :
+    inline MemoryReader(const uint8_t data[], size_t size) :
         m_data(data), m_size(size), m_offset(0) {}
 
     inline MemoryReader(const MemoryReader& other) :
