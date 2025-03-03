@@ -4,6 +4,7 @@
 
 #include <QImageIOPlugin>
 #include "ILBM.h"
+#include "Palette.h"
 
 namespace qilbm {
 
@@ -27,19 +28,20 @@ private:
 
     int m_currentFrame;
     ILBM m_image;
+    Palette m_palette;
 
 public:
     static const uint DEFAULT_FPS;
 
     ILBMHandler() :
-        QImageIOHandler(), m_blend(false), m_fps(DEFAULT_FPS), m_currentFrame(0), m_image() {}
+        QImageIOHandler(), m_blend(false), m_fps(DEFAULT_FPS), m_currentFrame(0), m_image(), m_palette() {}
 
     ILBMHandler(bool blend, uint fps) :
-        QImageIOHandler(), m_blend(blend), m_fps(fps), m_currentFrame(0), m_image() {}
+        QImageIOHandler(), m_blend(blend), m_fps(fps), m_currentFrame(0), m_image(), m_palette() {}
 
     ~ILBMHandler();
 
-    bool canRead() const;
+    bool canRead() const { return canRead(device()); }
     int currentImageNumber() const { return m_currentFrame; }
     QRect currentImageRect() const;
     int imageCount() const;
@@ -55,10 +57,10 @@ public:
 
     bool read();
 
-    bool blend() const { return m_blend; }
+    inline bool blend() const { return m_blend; }
     void setBlend(bool blend) { m_blend = blend; }
 
-    uint fps() const { return m_fps; }
+    inline uint fps() const { return m_fps; }
     void setFps(uint fps) {
         if (fps > 0) {
             m_fps = fps;
