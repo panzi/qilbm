@@ -103,17 +103,14 @@ Result ILBM::read(MemoryReader& reader) {
             TRY(body.read(chunk_reader, m_file_type, m_header));
             m_body = std::optional{ std::move(body) };
         } else if (std::memcmp(fourcc.data(), "CMAP", 4) == 0) {
-            CMAP cmap;
+            CMAP& cmap = m_cmaps.emplace_back();
             TRY(cmap.read(chunk_reader));
-            m_cmaps.emplace_back(std::move(cmap));
         } else if (std::memcmp(fourcc.data(), "CRNG", 4) == 0) {
-            CRNG crng;
+            CRNG& crng = m_crngs.emplace_back();
             TRY(crng.read(chunk_reader));
-            m_crngs.emplace_back(std::move(crng));
         } else if (std::memcmp(fourcc.data(), "CCRT", 4) == 0) {
-            CCRT ccrt;
+            CCRT& ccrt = m_ccrts.emplace_back();
             TRY(ccrt.read(chunk_reader));
-            m_ccrts.emplace_back(std::move(ccrt));
         } else if (std::memcmp(fourcc.data(), "CAMG", 4) == 0) {
             CAMG camg;
             TRY(camg.read(chunk_reader));
@@ -137,7 +134,7 @@ Result CMAP::read(MemoryReader& reader) {
     for (size_t index = 0; index < num_colors; ++ index) {
         uint8_t rgb[3];
         IO(reader.read(rgb, sizeof(rgb)));
-        m_colors.emplace_back(Color(rgb[0], rgb[1], rgb[2]));
+        m_colors.emplace_back(rgb[0], rgb[1], rgb[2]);
     }
 
     return Result_Ok;
