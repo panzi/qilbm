@@ -242,7 +242,7 @@ Result BODY::read(MemoryReader& reader, FileType file_type, const BMHD& header) 
     if (header.mask() == 1) {
         line_len += plane_len;
     }
-    std::vector<uint8_t> line {};
+    std::vector<uint8_t> line;
     line.resize(line_len, 0);
 
     const size_t data_len = height * line_len;
@@ -263,7 +263,7 @@ Result BODY::read(MemoryReader& reader, FileType file_type, const BMHD& header) 
 
             for (uint16_t y = 0; y < header.height(); ++ y) {
                 IO(reader.read(line));
-                decode_line(line, header.width(), header.mask(), plane_len, num_planes, file_type);
+                decode_line(line, header.mask(), header.width(), plane_len, num_planes, file_type);
             }
             break;
 
@@ -494,7 +494,7 @@ void BODY::decode_line(const std::vector<uint8_t>& line, uint8_t mask, uint16_t 
             } else {
                 for (uint_fast16_t x = 0; x < width; ++ x) {
                     size_t byte_offset = x / 8;
-                    size_t bit_offset = x % 8;
+                    auto bit_offset = x % 8;
                     uint8_t value = 0;
                     for (size_t plane_index = 0; plane_index < num_planes; ++ plane_index) {
                         size_t byte_index = plane_len * plane_index + byte_offset;
