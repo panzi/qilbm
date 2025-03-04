@@ -44,23 +44,37 @@ Result BMHD::read(MemoryReader& reader) {
 bool ILBM::can_read(MemoryReader& reader) {
     std::array<char, 4> fourcc;
     if (!reader.read_fourcc(fourcc)) {
+        DEBUG_LOG("IO error reading FOURCC, remaining bytes: %zu", reader.remaining());
         return false;
     }
 
     if (std::memcmp(fourcc.data(), "FORM", 4) != 0) {
+        DEBUG_LOG("illegal FOURCC: [0x%02x, 0x%02x, 0x%02x, 0x%02x] \"%c%c%c%c\"",
+            (uint)fourcc[0], (uint)fourcc[1], (uint)fourcc[2], (uint)fourcc[3],
+            fourcc[0], fourcc[1], fourcc[2], fourcc[3]);
         return false;
     }
 
-    uint32_t main_chuck_len = 0;
-    if (!reader.read_u32be(main_chuck_len)) {
+    uint32_t main_chunk_len = 0;
+    if (!reader.read_u32be(main_chunk_len)) {
+        DEBUG_LOG("IO error reading main_chunk_len, remaining bytes: %zu", reader.remaining());
+        return false;
+    }
+
+    if (main_chunk_len < BMHD::SIZE + 4) {
+        DEBUG_LOG("main chunk length too small: %u < %u", main_chunk_len, BMHD::SIZE + 4);
         return false;
     }
 
     if (!reader.read_fourcc(fourcc)) {
+        DEBUG_LOG("IO error reading FOURCC, remaining bytes: %zu", reader.remaining());
         return false;
     }
 
     if (std::memcmp(fourcc.data(), "ILBM", 4) != 0 && std::memcmp(fourcc.data(), "PBM ", 4) != 0) {
+        DEBUG_LOG("illegal FOURCC: [0x%02x, 0x%02x, 0x%02x, 0x%02x] \"%c%c%c%c\"",
+            (uint)fourcc[0], (uint)fourcc[1], (uint)fourcc[2], (uint)fourcc[3],
+            fourcc[0], fourcc[1], fourcc[2], fourcc[3]);
         return false;
     }
 
@@ -73,13 +87,19 @@ Result ILBM::read(MemoryReader& reader) {
 
     if (std::memcmp(fourcc.data(), "FORM", 4) != 0) {
         DEBUG_LOG("illegal FOURCC: [0x%02x, 0x%02x, 0x%02x, 0x%02x] \"%c%c%c%c\"",
-            fourcc[0], fourcc[1], fourcc[2], fourcc[3],
+            (uint)fourcc[0], (uint)fourcc[1], (uint)fourcc[2], (uint)fourcc[3],
             fourcc[0], fourcc[1], fourcc[2], fourcc[3]);
         return Result_Unsupported;
     }
 
-    uint32_t main_chuk_len = 0;
-    IO(reader.read_u32be(main_chuk_len));
+    uint32_t main_chunk_len = 0;
+    IO(reader.read_u32be(main_chunk_len));
+
+    if (main_chunk_len < BMHD::SIZE + 4) {
+        DEBUG_LOG("main chunk length too small: %u < %u", main_chunk_len, BMHD::SIZE + 4);
+        return Result_Unsupported;
+    }
+
     IO(reader.read_fourcc(fourcc));
 
     if (std::memcmp(fourcc.data(), "ILBM", 4) == 0) {
@@ -88,7 +108,7 @@ Result ILBM::read(MemoryReader& reader) {
         m_file_type = FileType_PBM;
     } else {
         DEBUG_LOG("unsupported file format: [0x%02x, 0x%02x, 0x%02x, 0x%02x] \"%c%c%c%c\"",
-            fourcc[0], fourcc[1], fourcc[2], fourcc[3],
+            (uint)fourcc[0], (uint)fourcc[1], (uint)fourcc[2], (uint)fourcc[3],
             fourcc[0], fourcc[1], fourcc[2], fourcc[3]);
         return Result_Unsupported;
     }
@@ -98,7 +118,7 @@ Result ILBM::read(MemoryReader& reader) {
     m_crngs.clear();
     m_ccrts.clear();
 
-    MemoryReader main_chunk_reader { reader, main_chuk_len };
+    MemoryReader main_chunk_reader { reader, main_chunk_len - 4 };
     while (main_chunk_reader.remaining() > 0) {
         IO(main_chunk_reader.read_fourcc(fourcc));
         uint32_t chunk_len = 0;
@@ -299,7 +319,7 @@ Result BODY::read(MemoryReader& reader, FileType file_type, const BMHD& header) 
 
                 if (std::memcmp(fourcc.data(), "VDAT", 4) != 0) {
                     DEBUG_LOG("expected \"VDAT\" chunk but got: [0x%02x, 0x%02x, 0x%02x, 0x%02x] \"%c%c%c%c\"",
-                        fourcc[0], fourcc[1], fourcc[2], fourcc[3],
+                        (uint)fourcc[0], (uint)fourcc[1], (uint)fourcc[2], (uint)fourcc[3],
                         fourcc[0], fourcc[1], fourcc[2], fourcc[3]);
                     return Result_ParsingError;
                 }
@@ -316,14 +336,15 @@ Result BODY::read(MemoryReader& reader, FileType file_type, const BMHD& header) 
                 IO(sub_reader.read_u16be(cmd_cnt));
 
                 if (cmd_cnt < 2) {
-                    DEBUG_LOG("error in VDAT, cmd_cnt < 2: %zu", (size_t)cmd_cnt);
+                    DEBUG_LOG("error in VDAT, cmd_cnt < 2: %u", cmd_cnt);
                     return Result_ParsingError;
                 }
-                size_t data_offset = cmd_cnt - 2;
+                cmd_cnt -= 2;
+                size_t data_offset = cmd_cnt;
                 const uint8_t *buf = sub_reader.data() + sub_reader.offset();
                 const size_t buf_len = sub_reader.remaining();
                 if (cmd_cnt > buf_len) {
-                    DEBUG_LOG("truncated compressed BODY chunk: %zu < %zu", buf_len, (size_t)cmd_cnt);
+                    DEBUG_LOG("truncated compressed BODY chunk: %u > %zu", cmd_cnt, buf_len);
                     return Result_ParsingError;
                 }
 
@@ -333,8 +354,12 @@ Result BODY::read(MemoryReader& reader, FileType file_type, const BMHD& header) 
 
                     if (cmd == 0) { // load count from data, COPY
                         size_t next_offset = data_offset + 2;
-                        if (next_offset > buf_len || next_offset < data_offset) {
-                            DEBUG_LOG("truncated compressed BODY chunk: %zu < %zu", buf_len, next_offset);
+                        if (next_offset < data_offset) {
+                            DEBUG_LOG("overflow while decompressing BODY chunk: %zu < %zu", next_offset, data_offset);
+                            return Result_ParsingError;
+                        }
+                        if (next_offset > buf_len) {
+                            DEBUG_LOG("truncated compressed BODY chunk: %zu > %zu", next_offset, buf_len);
                             return Result_ParsingError;
                         }
                         size_t count = GET_UINT16(buf, data_offset);
@@ -346,23 +371,32 @@ Result BODY::read(MemoryReader& reader, FileType file_type, const BMHD& header) 
                             return Result_ParsingError;
                         }
                         if (next_offset > buf_len) {
-                            DEBUG_LOG("truncated compressed BODY chunk: %zu < %zu", buf_len, next_offset);
+                            DEBUG_LOG("truncated compressed BODY chunk: %zu > %zu", next_offset, buf_len);
                             return Result_ParsingError;
                         }
+
                         std::copy(buf + data_offset, buf + next_offset, std::back_inserter(decompr));
                         data_offset = next_offset;
                     } else if (cmd == 1) { // load count from data, RLE
                         size_t next_offset = data_offset + 2;
-                        if (next_offset > buf_len || next_offset < data_offset) {
-                            DEBUG_LOG("truncated compressed BODY chunk: %zu < %zu", buf_len, next_offset);
+                        if (next_offset < data_offset) {
+                            DEBUG_LOG("overflow while decompressing BODY chunk: %zu < %zu", next_offset, data_offset);
+                            return Result_ParsingError;
+                        }
+                        if (next_offset > buf_len) {
+                            DEBUG_LOG("truncated compressed BODY chunk: %zu > %zu", next_offset, buf_len);
                             return Result_ParsingError;
                         }
                         uint_fast16_t count = GET_UINT16(buf, data_offset);
 
                         data_offset = next_offset;
                         next_offset += 2;
-                        if (next_offset > buf_len || next_offset < data_offset) {
-                            DEBUG_LOG("truncated compressed BODY chunk: %zu < %zu", buf_len, next_offset);
+                        if (next_offset < data_offset) {
+                            DEBUG_LOG("overflow while decompressing BODY chunk: %zu < %zu", next_offset, data_offset);
+                            return Result_ParsingError;
+                        }
+                        if (next_offset > buf_len) {
+                            DEBUG_LOG("truncated compressed BODY chunk: %zu > %zu", next_offset, buf_len);
                             return Result_ParsingError;
                         }
 
@@ -373,15 +407,16 @@ Result BODY::read(MemoryReader& reader, FileType file_type, const BMHD& header) 
                         data_offset = next_offset;
                     } else if (cmd < 0) { // count = -cmd, COPY
                         size_t count = -(int_fast32_t)cmd;
-                        size_t next_offset = data_offset + count;
+                        size_t next_offset = data_offset + count * 2;
                         if (next_offset < data_offset) {
                             DEBUG_LOG("overflow while decompressing BODY chunk: %zu < %zu", next_offset, data_offset);
                             return Result_ParsingError;
                         }
                         if (next_offset > buf_len) {
-                            DEBUG_LOG("truncated compressed BODY chunk: %zu < %zu", buf_len, next_offset);
+                            DEBUG_LOG("truncated compressed BODY chunk: %zu > %zu", next_offset, buf_len);
                             return Result_ParsingError;
                         }
+
                         std::copy(buf + data_offset, buf + next_offset, std::back_inserter(decompr));
                         data_offset = next_offset;
                     } else { // cmd > 1: count = cmd, RLE
@@ -392,7 +427,7 @@ Result BODY::read(MemoryReader& reader, FileType file_type, const BMHD& header) 
                             return Result_ParsingError;
                         }
                         if (next_offset > buf_len) {
-                            DEBUG_LOG("truncated compressed BODY chunk: %zu < %zu", buf_len, next_offset);
+                            DEBUG_LOG("truncated compressed BODY chunk: %zu > %zu", next_offset, buf_len);
                             return Result_ParsingError;
                         }
 
@@ -422,6 +457,8 @@ Result BODY::read(MemoryReader& reader, FileType file_type, const BMHD& header) 
                         m_data[pixel_index] |= ((value >> (7 - bit)) & 1) << plane_index;
                     }
                 }
+
+                reader.seek_relative(sub_chunk_len);
             }
             break;
         }

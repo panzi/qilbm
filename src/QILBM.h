@@ -50,7 +50,7 @@ public:
 
     ~ILBMHandler();
 
-    bool canRead() const override { return canRead(device()); }
+    bool canRead() const override;
     int currentImageNumber() const override { return m_currentFrame; }
     QRect currentImageRect() const override;
     int imageCount() const override { return m_imageCount; }

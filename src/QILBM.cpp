@@ -46,7 +46,7 @@ void ILBMPlugin::readEnvVars() {
     uint fps = env_fps.isEmpty() ? DEFAULT_FPS :
         env_fps.toUInt(&ok);
     if (!ok || fps < 1) {
-        qDebug() << "QILBM: illegal value for QILBM_FPS environment variable: " << env_fps;
+        qDebug() << "ILBMPlugin::readEnvVars(): illegal value for QILBM_FPS environment variable: " << env_fps;
     } else {
         m_fps = fps;
     }
@@ -57,7 +57,7 @@ void ILBMPlugin::readEnvVars() {
         env_blend.compare(QStringLiteral("true"), Qt::CaseInsensitive) == 0 ||
         env_blend == QStringLiteral("1");
     if (!ok) {
-        qDebug() << "QILBM: illegal value for QILBM_BLEND environment variable: " << env_blend;
+        qDebug() << "ILBMPlugin::readEnvVars(): illegal value for QILBM_BLEND environment variable: " << env_blend;
     } else {
         m_blend = blend;
     }
@@ -86,16 +86,24 @@ QImageIOPlugin::Capabilities ILBMPlugin::capabilities(QIODevice *device, const Q
 ILBMHandler* ILBMPlugin::create(QIODevice *device, const QByteArray &format) const {
     auto handler = new ILBMHandler(m_blend, m_fps);
     handler->setDevice(device);
-    handler->setFormat(format);
+    if (format.isNull()) {
+        handler->setFormat("ilbm");
+    } else {
+        handler->setFormat(format);
+    }
 
     return handler;
 }
 
 ILBMHandler::~ILBMHandler() {}
 
+bool ILBMHandler::canRead() const {
+    return m_status == Ok || (m_status == Init && canRead(device()));
+}
+
 bool ILBMHandler::canRead(QIODevice *device) {
     if (device == nullptr) {
-        qDebug() << "ILBMHandler::canRead: device is null";
+        qDebug() << "ILBMHandler::canRead(QIODevice*): device is null";
         return false;
     }
     auto data = device->peek(12);
@@ -106,7 +114,7 @@ bool ILBMHandler::canRead(QIODevice *device) {
 bool ILBMHandler::read() {
     auto* device = this->device();
     if (device == nullptr) {
-        qDebug() << "ILBMHandler::read: device is null";
+        qDebug() << "ILBMHandler::read(): device is null";
         return false;
     }
 
@@ -136,13 +144,13 @@ bool ILBMHandler::read() {
             return false;
 
         default:
-            qDebug() << "illegal result value: " << result;
+            qDebug() << "ILBMHandler::read(): illegal result value: " << result;
             m_status = Unsupported;
             return false;
     }
 
     if (m_image->body() == nullptr) {
-        qDebug() << "ILBMHandler::read: missing body";
+        qDebug() << "ILBMHandler::read(): missing body";
         m_status = NoBody;
         return false;
     }
@@ -155,13 +163,13 @@ bool ILBMHandler::read() {
             auto flags = crng.flags();
             if ((flags & 1) != 0) {
                 if (flags > 3) {
-                    qWarning() << "QILBM: Unsupported CRNG flags:" << crng;
+                    qWarning() << "ILBMHandler::read(): Unsupported CRNG flags:" << crng;
                 }
                 m_cycles.emplace_back(
                     low, high, rate, (flags & 2) != 0
                 );
             } else if (flags != 0) {
-                qWarning() << "QILBM: Unsupported CRNG flags:" << crng;
+                qWarning() << "ILBMHandler::read(): Unsupported CRNG flags:" << crng;
             }
         }
     }
@@ -175,7 +183,7 @@ bool ILBMHandler::read() {
             uint64_t rate = usec * 8903 / 1000000;
 
             if (direction < -1 || direction > 1) {
-                qWarning() << "QILBM: Unsupported CCRT direction:" << ccrt;
+                qWarning() << "ILBMHandler::read(): Unsupported CCRT direction:" << ccrt;
             }
 
             if (rate > 0) {
@@ -198,34 +206,21 @@ bool ILBMHandler::read() {
             pallete[index] = colors[index];
         }
 
-        //if (m_cycles.size() > 0) {
-        //    m_imageCount = 0;
-        //}
-        //*
-        for (auto& cycle : m_cycles) {
-            int size = (uint)cycle.high() + 1 - (uint)cycle.low();
-            // Is this correct?
-            int frames = m_fps * size * LBM_CYCLE_RATE_DIVISOR / cycle.rate();
-            qDebug() << "" << cycle << " -> frames:" << frames;
-
-            if (m_imageCount < frames ? (frames % m_imageCount) != 0 : (m_imageCount % frames) != 0) {
-                m_imageCount = INT_MAX / m_imageCount < frames ? INT_MAX : m_imageCount * frames;
-            } else {
-                m_imageCount = std::max(m_imageCount, frames);
-            }
+        if (m_cycles.size() > 0) {
+            m_imageCount = 0;
         }
-        //*/
     }
 
-    qDebug().nospace() << "ILBMHandler::read: "
-        << "file_type: " << file_type_name(m_image->file_type())
-        << ", num_planes: " << m_image->header().num_planes()
-        << ", compression: " << m_image->header().compression()
-        << ", mask: " << m_image->header().mask()
-        << ", trans_color: " << m_image->header().trans_color()
-        << ", has palette: " << (m_image->cmap() != nullptr ? "true" : "false")
-        << ", imageCount: " << m_imageCount
-        << ", is animated: " << option(ImageOption::Animation);
+    // qDebug().nospace() << "ILBMHandler::read(): "
+    //     << "file_type: " << file_type_name(m_image->file_type())
+    //     << ", num_planes: " << m_image->header().num_planes()
+    //     << ", compression: " << m_image->header().compression()
+    //     << ", mask: " << m_image->header().mask()
+    //     << ", trans_color: " << m_image->header().trans_color()
+    //     << ", has palette: " << (m_image->cmap() != nullptr ? "true" : "false")
+    //     << ", imageCount: " << m_imageCount
+    //     << ", is animated: " << option(ImageOption::Animation)
+    //     << ", this: " << this;
 
     return true;
 }
@@ -240,7 +235,6 @@ QRect ILBMHandler::currentImageRect() const {
 }
 
 bool ILBMHandler::jumpToImage(int imageNumber) {
-    qDebug() << "ILBMHandler::jumpToImage:" << imageNumber;
     if (imageNumber < 0) {
         return false;
     }
@@ -259,7 +253,6 @@ bool ILBMHandler::jumpToImage(int imageNumber) {
 }
 
 bool ILBMHandler::jumpToNextImage() {
-    qDebug() << "ILBMHandler::jumpToNextImage";
     if (m_palette && m_cycles.size() > 0) {
         m_currentFrame ++;
         return true;
@@ -270,10 +263,8 @@ bool ILBMHandler::jumpToNextImage() {
 
 int ILBMHandler::nextImageDelay() const {
     if (m_palette && m_cycles.size() > 0) {
-        qDebug() << "ILBMHandler::nextImageDelay:" << (1000 / m_fps);
         return 1000 / m_fps;
     }
-    qDebug() << "ILBMHandler::nextImageDelay: 0";
     return 0;
 }
 
@@ -322,18 +313,25 @@ bool ILBMHandler::supportsOption(ImageOption option) const {
 }
 
 bool ILBMHandler::read(QImage *image) {
+    // qDebug().nospace() << "\nILBMHandler::read(QImage*): status: " << statusMessage()
+    //     << ", imageCount: " << m_imageCount
+    //     << ", currentFrame: " << m_currentFrame
+    //     << ", fps: " << m_fps
+    //     << ", blend: " << m_blend
+    //     << ", this: " << this;
+
     if (image == nullptr) {
-        qDebug() << "ILBMHandler::read: image is null";
+        qDebug() << "ILBMHandler::read(QImage*): image is null";
         return false;
     }
 
     if (m_status == Init && !read()) {
-        qDebug() << "ILBMHandler::read: status:" << statusMessage();
+        qDebug() << "ILBMHandler::read(QImage*): read failed, status:" << statusMessage();
         return false;
     }
 
-    if (!m_image) {
-        qDebug() << "ILBMHandler::read: m_image is null! status:" << statusMessage();
+    if (m_status != Ok || !m_image) {
+        qDebug() << "ILBMHandler::read(QImage*): m_image is null! status:" << statusMessage();
         return false;
     }
 
@@ -343,9 +341,8 @@ bool ILBMHandler::read(QImage *image) {
     const auto format = qImageFormat(header);
 
     if (width != image->width() || height != image->height() || format != image->format()) {
-        *image = QImage((int)width, (int)height, format);
-        if (image->isNull()) {
-            qDebug() << "ILBMHandler::read: error allocating image";
+        if (!allocateImage(QSize(width, height), format, image)) {
+            qDebug() << "ILBMHandler::read(QImage*): error allocating image";
             return false;
         }
     }
@@ -353,16 +350,15 @@ bool ILBMHandler::read(QImage *image) {
     const auto* body = m_image->body();
     const auto& data = body->data();
     const auto& mask = body->mask();
-    const bool is_masked = header.mask() == 1;
+    const bool not_masked = header.mask() != 1;
 
-    qDebug() << "read frame" << m_currentFrame;
     if (header.num_planes() == 24) {
         for (auto y = 0; y < height; ++ y) {
             size_t mask_offset = (size_t)y * (size_t)width;
             size_t offset = mask_offset * 3;
             for (auto x = 0; x < width; ++ x) {
                 size_t index = offset + x * 3;
-                int alpha = (is_masked && !mask[mask_offset + x]) * 255;
+                int alpha = (not_masked || mask[mask_offset + x]) * 255;
                 image->setPixel(x, y, qRgba(data[index], data[index + 1], data[index + 2], alpha));
             }
         }
@@ -383,17 +379,21 @@ bool ILBMHandler::read(QImage *image) {
             size_t offset = (size_t)y * (size_t)width;
             for (auto x = 0; x < width; ++ x) {
                 size_t index = offset + x;
-                int alpha = (is_masked && !mask[index]) * 255;
+                int alpha = (not_masked || mask[index]) * 255;
                 auto& color = palette[data[index]];
                 image->setPixel(x, y, qRgba(color.r(), color.g(), color.b(), alpha));
             }
+        }
+
+        if (m_cycles.size() > 0) {
+            ++ m_currentFrame;
         }
     } else {
         for (auto y = 0; y < height; ++ y) {
             size_t offset = (size_t)y * (size_t)width;
             for (auto x = 0; x < width; ++ x) {
                 size_t index = offset + x;
-                int alpha = (is_masked && !mask[index]) * 255;
+                int alpha = (not_masked || mask[index]) * 255;
                 uint8_t value = data[index];
                 image->setPixel(x, y, qRgba(value, value, value, alpha));
             }
