@@ -1,7 +1,7 @@
 #include "Palette.h"
 #include <cmath>
 
-namespace qilbm {
+using namespace qilbm;
 
 void Palette::apply_cycle(const Cycle& cycle, double now) {
     uint8_t low = cycle.low();
@@ -68,6 +68,4 @@ void Palette::apply_cycles_from(const Palette& palette, const std::vector<Cycle>
     } else {
         apply_cycles(cycles, now);
     }
-}
-
 }

@@ -4,6 +4,7 @@
 
 #include <optional>
 #include <vector>
+#include <memory>
 #include <stdint.h>
 #include <cmath>
 
@@ -100,7 +101,7 @@ private:
 public:
     CMAP() : m_colors{} {}
 
-    inline const std::vector<Color> colors() const { return m_colors; }
+    inline const std::vector<Color>& colors() const { return m_colors; }
 
     Result read(MemoryReader& reader);
 };
@@ -175,8 +176,8 @@ private:
     FileType m_file_type;
     BMHD m_header;
     std::optional<CAMG> m_camg;
-    std::optional<BODY> m_body;
-    std::vector<CMAP> m_cmaps;
+    std::unique_ptr<BODY> m_body;
+    std::unique_ptr<CMAP> m_cmap;
     std::vector<CRNG> m_crngs;
     std::vector<CCRT> m_ccrts;
 
@@ -184,19 +185,19 @@ public:
     static const uint32_t MIN_SIZE = BMHD::SIZE + 12;
 
     ILBM() :
-        m_file_type(FileType_ILBM),
+        m_file_type{FileType_ILBM},
         m_header{},
         m_camg{},
         m_body{},
-        m_cmaps{},
+        m_cmap{},
         m_crngs{},
         m_ccrts{} {}
 
     inline FileType file_type() const { return m_file_type; }
     inline const BMHD& header() const { return m_header; }
     inline const std::optional<CAMG>& camg() const { return m_camg; }
-    inline const std::optional<BODY>& body() const { return m_body; }
-    inline const std::vector<CMAP>& cmaps() const { return m_cmaps; }
+    inline const BODY* body() const { return m_body.get(); }
+    inline const CMAP* cmap() const { return m_cmap.get(); }
     inline const std::vector<CRNG>& crngs() const { return m_crngs; }
     inline const std::vector<CCRT>& ccrts() const { return m_ccrts; }
 

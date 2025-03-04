@@ -6,11 +6,11 @@
 
 #define GET_UINT16(BUF, INDEX) (((uint16_t)((BUF)[(INDEX)]) << 8) | (uint16_t)((BUF)[(INDEX) + 1]))
 
-namespace qilbm {
+using namespace qilbm;
 
 Result BMHD::read(MemoryReader& reader) {
     if (reader.remaining() < BMHD::SIZE) {
-        DEBUG_LOG("truncated BMHD chunk: %zu < %zu", reader.remaining(), BMHD::SIZE);
+        DEBUG_LOG("truncated BMHD chunk: %zu < %u", reader.remaining(), BMHD::SIZE);
         return Result_ParsingError;
     }
 
@@ -85,7 +85,8 @@ Result ILBM::read(MemoryReader& reader) {
         return Result_Unsupported;
     }
 
-    m_cmaps.clear();
+    m_body = nullptr;
+    m_cmap = nullptr;
     m_crngs.clear();
     m_ccrts.clear();
 
@@ -99,12 +100,11 @@ Result ILBM::read(MemoryReader& reader) {
         if (std::memcmp(fourcc.data(), "BMHD", 4) == 0) {
             TRY(m_header.read(chunk_reader));
         } else if (std::memcmp(fourcc.data(), "BODY", 4) == 0) {
-            BODY body;
-            TRY(body.read(chunk_reader, m_file_type, m_header));
-            m_body = std::optional{ std::move(body) };
+            m_body = std::make_unique<BODY>();
+            TRY(m_body->read(chunk_reader, m_file_type, m_header));
         } else if (std::memcmp(fourcc.data(), "CMAP", 4) == 0) {
-            CMAP& cmap = m_cmaps.emplace_back();
-            TRY(cmap.read(chunk_reader));
+            m_cmap = std::make_unique<CMAP>();
+            TRY(m_cmap->read(chunk_reader));
         } else if (std::memcmp(fourcc.data(), "CRNG", 4) == 0) {
             CRNG& crng = m_crngs.emplace_back();
             TRY(crng.read(chunk_reader));
@@ -142,7 +142,7 @@ Result CMAP::read(MemoryReader& reader) {
 
 Result CAMG::read(MemoryReader& reader) {
     if (reader.remaining()< CAMG::SIZE) {
-        DEBUG_LOG("truncated CAMG chunk: %zu < %zu", reader.remaining(), CAMG::SIZE);
+        DEBUG_LOG("truncated CAMG chunk: %zu < %u", reader.remaining(), CAMG::SIZE);
         return Result_ParsingError;
     }
 
@@ -153,7 +153,7 @@ Result CAMG::read(MemoryReader& reader) {
 
 Result CRNG::read(MemoryReader& reader) {
     if (reader.remaining()< CRNG::SIZE) {
-        DEBUG_LOG("truncated CRNG chunk: %zu < %zu", reader.remaining(), CRNG::SIZE);
+        DEBUG_LOG("truncated CRNG chunk: %zu < %u", reader.remaining(), CRNG::SIZE);
         return Result_ParsingError;
     }
 
@@ -169,7 +169,7 @@ Result CRNG::read(MemoryReader& reader) {
 
 Result CCRT::read(MemoryReader& reader) {
     if (reader.remaining()< CCRT::SIZE) {
-        DEBUG_LOG("truncated CCRT chunk: %zu < %zu", reader.remaining(), CCRT::SIZE);
+        DEBUG_LOG("truncated CCRT chunk: %zu < %u", reader.remaining(), CCRT::SIZE);
         return Result_ParsingError;
     }
 
@@ -527,6 +527,4 @@ void BODY::decode_line(const std::vector<uint8_t>& line, uint8_t mask, uint16_t 
             m_mask.emplace_back(value);
         }
     }
-}
-
 }

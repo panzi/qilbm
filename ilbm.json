@@ -1,4 +1,4 @@
 {
-    "Keys" : [ "ilbm" ],
-    "MimeTypes" : ["image/x-ilbm"]
+    "Keys" : ["ilbm"],
+    "MimeTypes" : ["image/x-ilbm", "image/x-lbm"]
 }

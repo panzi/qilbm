@@ -3,10 +3,82 @@
 #pragma once
 
 #include <QImageIOPlugin>
+#include <memory>
+#include <vector>
 #include "ILBM.h"
 #include "Palette.h"
 
+QDebug& operator<<(QDebug& debug, const qilbm::CRNG& crng);
+QDebug& operator<<(QDebug& debug, const qilbm::CCRT& ccrt);
+
 namespace qilbm {
+
+extern const uint DEFAULT_FPS;
+
+class ILBMHandler : public QImageIOHandler {
+public:
+    enum Status {
+        Init = -1,
+        Ok = 0,
+        IOError = 1,
+        ParsingError = 2,
+        Unsupported = 3,
+        NoBody = 4,
+    };
+
+private:
+    Status m_status;
+    bool m_blend;
+    uint m_fps;
+    int m_imageCount;
+    int m_currentFrame;
+    std::unique_ptr<ILBM> m_image;
+    std::unique_ptr<Palette> m_palette;
+    std::vector<Cycle> m_cycles;
+
+public:
+    ILBMHandler() :
+        QImageIOHandler(), m_status(Init), m_blend(false), m_fps(DEFAULT_FPS),
+        m_imageCount(0), m_currentFrame(0),
+        m_image(), m_palette(), m_cycles() {}
+
+    ILBMHandler(bool blend, uint fps) :
+        QImageIOHandler(), m_status(Init), m_blend(blend), m_fps(fps),
+        m_imageCount(0), m_currentFrame(0),
+        m_image(), m_palette(), m_cycles() {}
+
+    ~ILBMHandler();
+
+    bool canRead() const override { return canRead(device()); }
+    int currentImageNumber() const override { return m_currentFrame; }
+    QRect currentImageRect() const override;
+    int imageCount() const override { return m_imageCount; }
+    bool jumpToImage(int imageNumber) override;
+    bool jumpToNextImage() override;
+    int loopCount() const override { return 0; }
+    int nextImageDelay() const override;
+    QVariant option(ImageOption option) const override;
+    bool read(QImage *image) override;
+    bool supportsOption(ImageOption option) const override;
+
+    static bool canRead(QIODevice *device);
+
+    bool read();
+    inline Status status() const { return m_status; }
+
+    inline bool blend() const { return m_blend; }
+    void setBlend(bool blend) { m_blend = blend; }
+
+    inline uint fps() const { return m_fps; }
+    void setFps(uint fps) {
+        if (fps > 0) {
+            m_fps = fps;
+        }
+    }
+
+    static QString statusMessage(Status status);
+    QString statusMessage() const { return statusMessage(m_status); };
+};
 
 class ILBMPlugin : public QImageIOPlugin {
     Q_OBJECT
@@ -14,48 +86,24 @@ class ILBMPlugin : public QImageIOPlugin {
     Q_CLASSINFO("url", "https://github.com/panzi/qilbm")
     Q_PLUGIN_METADATA(IID "org.qt-project.Qt.QImageIOHandlerFactoryInterface" FILE "ilbm.json")
 
-public:
-    ILBMPlugin(QObject *parent = nullptr) : QImageIOPlugin(parent) {}
-
-    Capabilities capabilities(QIODevice *device, const QByteArray &format) const;
-    QImageIOHandler* create(QIODevice *device, const QByteArray &format) const;
-};
-
-class ILBMHandler : public QImageIOHandler {
 private:
     bool m_blend;
     uint m_fps;
 
-    int m_currentFrame;
-    ILBM m_image;
-    Palette m_palette;
+protected:
+    void readEnvVars();
 
 public:
-    static const uint DEFAULT_FPS;
+    ILBMPlugin(QObject *parent = nullptr) :
+        QImageIOPlugin(parent), m_blend(false), m_fps(DEFAULT_FPS) {
+        readEnvVars();
+    }
 
-    ILBMHandler() :
-        QImageIOHandler(), m_blend(false), m_fps(DEFAULT_FPS), m_currentFrame(0), m_image(), m_palette() {}
+    ILBMPlugin(QObject *parent, bool blend = false, uint fps = DEFAULT_FPS) :
+        QImageIOPlugin(parent), m_blend(blend), m_fps(fps == 0 ? 1 : fps) {}
 
-    ILBMHandler(bool blend, uint fps) :
-        QImageIOHandler(), m_blend(blend), m_fps(fps), m_currentFrame(0), m_image(), m_palette() {}
-
-    ~ILBMHandler();
-
-    bool canRead() const { return canRead(device()); }
-    int currentImageNumber() const { return m_currentFrame; }
-    QRect currentImageRect() const;
-    int imageCount() const;
-    bool jumpToImage(int imageNumber);
-    bool jumpToNextImage();
-    int loopCount() const;
-    int nextImageDelay() const;
-    QVariant option(ImageOption option) const;
-    bool read(QImage *image);
-    bool supportsOption(ImageOption option) const;
-
-    static bool canRead(QIODevice *device);
-
-    bool read();
+    Capabilities capabilities(QIODevice *device, const QByteArray &format) const override;
+    ILBMHandler* create(QIODevice *device, const QByteArray &format) const override;
 
     inline bool blend() const { return m_blend; }
     void setBlend(bool blend) { m_blend = blend; }

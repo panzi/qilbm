@@ -35,6 +35,10 @@ public:
         return m_data;
     }
 
+    inline size_t size() const {
+        return m_data.size();
+    }
+
     inline const Color& operator[](size_t index) const {
         return m_data[index];
     }
