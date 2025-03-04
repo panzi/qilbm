@@ -10,6 +10,7 @@
 
 QDebug& operator<<(QDebug& debug, const qilbm::CRNG& crng);
 QDebug& operator<<(QDebug& debug, const qilbm::CCRT& ccrt);
+QDebug& operator<<(QDebug& debug, const qilbm::Cycle& cycle);
 
 namespace qilbm {
 
@@ -39,12 +40,12 @@ private:
 public:
     ILBMHandler() :
         QImageIOHandler(), m_status(Init), m_blend(false), m_fps(DEFAULT_FPS),
-        m_imageCount(0), m_currentFrame(0),
+        m_imageCount(0), m_currentFrame(-1),
         m_image(), m_palette(), m_cycles() {}
 
     ILBMHandler(bool blend, uint fps) :
         QImageIOHandler(), m_status(Init), m_blend(blend), m_fps(fps),
-        m_imageCount(0), m_currentFrame(0),
+        m_imageCount(0), m_currentFrame(-1),
         m_image(), m_palette(), m_cycles() {}
 
     ~ILBMHandler();
@@ -55,7 +56,7 @@ public:
     int imageCount() const override { return m_imageCount; }
     bool jumpToImage(int imageNumber) override;
     bool jumpToNextImage() override;
-    int loopCount() const override { return 0; }
+    int loopCount() const override { return INT_MAX; }
     int nextImageDelay() const override;
     QVariant option(ImageOption option) const override;
     bool read(QImage *image) override;

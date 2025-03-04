@@ -25,6 +25,8 @@ enum FileType {
     FileType_PBM,
 };
 
+const char *file_type_name(FileType file_type);
+
 class BMHD {
 private:
     uint16_t m_width;

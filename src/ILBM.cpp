@@ -8,6 +8,14 @@
 
 using namespace qilbm;
 
+const char *qilbm::file_type_name(FileType file_type) {
+    switch (file_type) {
+        case FileType_ILBM: return "ILBM";
+        case FileType_PBM:  return "PBM";
+        default: return "Invalid file type";
+    }
+}
+
 Result BMHD::read(MemoryReader& reader) {
     if (reader.remaining() < BMHD::SIZE) {
         DEBUG_LOG("truncated BMHD chunk: %zu < %u", reader.remaining(), BMHD::SIZE);
@@ -411,7 +419,7 @@ Result BODY::read(MemoryReader& reader, FileType file_type, const BMHD& header) 
                         if (pixel_index >= m_data.size()) {
                             break;
                         }
-                        m_data[pixel_index] |= (( value >> (7 - bit)) & 1) << plane_index;
+                        m_data[pixel_index] |= ((value >> (7 - bit)) & 1) << plane_index;
                     }
                 }
             }

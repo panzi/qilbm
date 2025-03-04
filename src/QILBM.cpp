@@ -3,21 +3,36 @@
 #include <climits>
 
 QDebug& operator<<(QDebug& debug, const qilbm::CRNG& crng) {
-    debug << "CRNG { rate:" << crng.rate() <<
-        ", flags:" << crng.flags() <<
-        ", low:" << crng.low() <<
-        ", high:" << crng.high() <<
-        " }";
+    bool spaces = debug.autoInsertSpaces();
+    debug.nospace() << "CRNG { rate: " << crng.rate()
+        << ", flags: " << crng.flags()
+        << ", low: " << crng.low()
+        << ", high: " << crng.high()
+        << " }";
+    debug.setAutoInsertSpaces(spaces);
     return debug;
 }
 
 QDebug& operator<<(QDebug& debug, const qilbm::CCRT& ccrt) {
-    debug << "CCRT { direction:" << ccrt.direction() <<
-        ", low:" << ccrt.low() <<
-        ", high:" << ccrt.high() <<
-        ", delay_sec:" << ccrt.delay_sec() <<
-        ", delay_usec:" << ccrt.delay_usec() <<
-        " }";
+    bool spaces = debug.autoInsertSpaces();
+    debug.nospace() << "CCRT { direction: " << ccrt.direction()
+        << ", low: " << ccrt.low()
+        << ", high: " << ccrt.high()
+        << ", delay_sec: " << ccrt.delay_sec()
+        << ", delay_usec: " << ccrt.delay_usec()
+        << " }";
+    debug.setAutoInsertSpaces(spaces);
+    return debug;
+}
+
+QDebug& operator<<(QDebug& debug, const qilbm::Cycle& cycle) {
+    bool spaces = debug.autoInsertSpaces();
+    debug.nospace() << "Cycle { low: " << cycle.low()
+        << ", high: " << cycle.high()
+        << ", rate: " << cycle.rate()
+        << ", reverse: " << cycle.reverse()
+        << " }";
+    debug.setAutoInsertSpaces(spaces);
     return debug;
 }
 
@@ -127,6 +142,7 @@ bool ILBMHandler::read() {
     }
 
     if (m_image->body() == nullptr) {
+        qDebug() << "ILBMHandler::read: missing body";
         m_status = NoBody;
         return false;
     }
@@ -139,13 +155,13 @@ bool ILBMHandler::read() {
             auto flags = crng.flags();
             if ((flags & 1) != 0) {
                 if (flags > 3) {
-                    qWarning() << "QILBM: Unsupported CRNG flags: " << crng;
+                    qWarning() << "QILBM: Unsupported CRNG flags:" << crng;
                 }
                 m_cycles.emplace_back(
                     low, high, rate, (flags & 2) != 0
                 );
             } else if (flags != 0) {
-                qWarning() << "QILBM: Unsupported CRNG flags: " << crng;
+                qWarning() << "QILBM: Unsupported CRNG flags:" << crng;
             }
         }
     }
@@ -159,7 +175,7 @@ bool ILBMHandler::read() {
             uint64_t rate = usec * 8903 / 1000000;
 
             if (direction < -1 || direction > 1) {
-                qWarning() << "QILBM: Unsupported CCRT direction: " << ccrt;
+                qWarning() << "QILBM: Unsupported CCRT direction:" << ccrt;
             }
 
             if (rate > 0) {
@@ -170,6 +186,7 @@ bool ILBMHandler::read() {
         }
     }
 
+    m_currentFrame = 0;
     m_imageCount = 1;
     const auto* cmap = m_image->cmap();
     if (cmap != nullptr) {
@@ -181,15 +198,34 @@ bool ILBMHandler::read() {
             pallete[index] = colors[index];
         }
 
+        //if (m_cycles.size() > 0) {
+        //    m_imageCount = 0;
+        //}
+        //*
         for (auto& cycle : m_cycles) {
             int size = (uint)cycle.high() + 1 - (uint)cycle.low();
             // Is this correct?
             int frames = m_fps * size * LBM_CYCLE_RATE_DIVISOR / cycle.rate();
-            if (m_imageCount < frames ? frames % m_imageCount != 0 : m_imageCount % frames != 0) {
-                m_imageCount = INT_MAX / m_imageCount > frames ? INT_MAX : m_imageCount * frames;
+            qDebug() << "" << cycle << " -> frames:" << frames;
+
+            if (m_imageCount < frames ? (frames % m_imageCount) != 0 : (m_imageCount % frames) != 0) {
+                m_imageCount = INT_MAX / m_imageCount < frames ? INT_MAX : m_imageCount * frames;
+            } else {
+                m_imageCount = std::max(m_imageCount, frames);
             }
         }
+        //*/
     }
+
+    qDebug().nospace() << "ILBMHandler::read: "
+        << "file_type: " << file_type_name(m_image->file_type())
+        << ", num_planes: " << m_image->header().num_planes()
+        << ", compression: " << m_image->header().compression()
+        << ", mask: " << m_image->header().mask()
+        << ", trans_color: " << m_image->header().trans_color()
+        << ", has palette: " << (m_image->cmap() != nullptr ? "true" : "false")
+        << ", imageCount: " << m_imageCount
+        << ", is animated: " << option(ImageOption::Animation);
 
     return true;
 }
@@ -204,6 +240,7 @@ QRect ILBMHandler::currentImageRect() const {
 }
 
 bool ILBMHandler::jumpToImage(int imageNumber) {
+    qDebug() << "ILBMHandler::jumpToImage:" << imageNumber;
     if (imageNumber < 0) {
         return false;
     }
@@ -222,6 +259,7 @@ bool ILBMHandler::jumpToImage(int imageNumber) {
 }
 
 bool ILBMHandler::jumpToNextImage() {
+    qDebug() << "ILBMHandler::jumpToNextImage";
     if (m_palette && m_cycles.size() > 0) {
         m_currentFrame ++;
         return true;
@@ -232,18 +270,18 @@ bool ILBMHandler::jumpToNextImage() {
 
 int ILBMHandler::nextImageDelay() const {
     if (m_palette && m_cycles.size() > 0) {
+        qDebug() << "ILBMHandler::nextImageDelay:" << (1000 / m_fps);
         return 1000 / m_fps;
     }
+    qDebug() << "ILBMHandler::nextImageDelay: 0";
     return 0;
 }
 
 static inline QImage::Format qImageFormat(const BMHD& header) {
     const auto num_planes = header.num_planes();
     return
-        num_planes == 32 ? QImage::Format::Format_RGBA8888 :
-        num_planes == 24 && header.mask() ? QImage::Format::Format_RGBA8888 :
-        num_planes == 24 ? QImage::Format::Format_RGB888 :
-        QImage::Format::Format_Indexed8;
+        num_planes == 32 || header.mask() ? QImage::Format::Format_RGBA8888 :
+        QImage::Format::Format_RGB888;
 }
 
 QVariant ILBMHandler::option(ImageOption option) const {
@@ -299,14 +337,12 @@ bool ILBMHandler::read(QImage *image) {
         return false;
     }
 
-    bool init = m_currentFrame == 0;
     const auto& header = m_image->header();
     const auto width = header.width();
     const auto height = header.height();
     const auto format = qImageFormat(header);
 
     if (width != image->width() || height != image->height() || format != image->format()) {
-        init = true;
         *image = QImage((int)width, (int)height, format);
         if (image->isNull()) {
             qDebug() << "ILBMHandler::read: error allocating image";
@@ -314,63 +350,54 @@ bool ILBMHandler::read(QImage *image) {
         }
     }
 
-    if (init) {
-        const auto* body = m_image->body();
-        const auto& data = body->data();
-        const auto& mask = body->mask();
-        const bool is_masked = header.mask() == 1;
+    const auto* body = m_image->body();
+    const auto& data = body->data();
+    const auto& mask = body->mask();
+    const bool is_masked = header.mask() == 1;
 
-        if (header.num_planes() == 24) {
-            for (auto y = 0; y < height; ++ y) {
-                size_t mask_offset = (size_t)y * (size_t)width;
-                size_t offset = mask_offset * 3;
-                for (auto x = 0; x < width; ++ x) {
-                    size_t index = offset + x * 3;
-                    if (is_masked && !mask[mask_offset + x]) {
-                        image->setPixel(x, y, qRgba(0, 0, 0, 0));
-                    } else {
-                        image->setPixel(x, y, qRgb(data[index], data[index + 1], data[index + 2]));
-                    }
-                }
-            }
-        } else if (header.num_planes() == 32) {
-            for (auto y = 0; y < height; ++ y) {
-                size_t offset = (size_t)y * (size_t)width * 4;
-                for (auto x = 0; x < width; ++ x) {
-                    size_t index = offset + x * 4;
-                    image->setPixel(x, y, qRgba(data[index], data[index + 1], data[index + 2], data[index + 3]));
-                }
-            }
-        } else {
-            for (auto y = 0; y < height; ++ y) {
-                size_t offset = (size_t)y * (size_t)width;
-                for (auto x = 0; x < width; ++ x) {
-                    size_t index = offset + x;
-                    if (is_masked && !mask[index]) {
-                        image->setPixel(x, y, 256);
-                    } else {
-                        image->setPixel(x, y, data[index]);
-                    }
-                }
+    qDebug() << "read frame" << m_currentFrame;
+    if (header.num_planes() == 24) {
+        for (auto y = 0; y < height; ++ y) {
+            size_t mask_offset = (size_t)y * (size_t)width;
+            size_t offset = mask_offset * 3;
+            for (auto x = 0; x < width; ++ x) {
+                size_t index = offset + x * 3;
+                int alpha = (is_masked && !mask[mask_offset + x]) * 255;
+                image->setPixel(x, y, qRgba(data[index], data[index + 1], data[index + 2], alpha));
             }
         }
-    }
-
-    if (m_palette) {
+    } else if (header.num_planes() == 32) {
+        for (auto y = 0; y < height; ++ y) {
+            size_t offset = (size_t)y * (size_t)width * 4;
+            for (auto x = 0; x < width; ++ x) {
+                size_t index = offset + x * 4;
+                image->setPixel(x, y, qRgba(data[index], data[index + 1], data[index + 2], data[index + 3]));
+            }
+        }
+    } else if (m_palette) {
         double now = (double)m_currentFrame / (double)m_fps;
         Palette palette;
         palette.apply_cycles_from(*m_palette, m_cycles, now, m_blend);
 
-        image->setColorCount(257);
-        for (size_t index = 0; index < palette.size(); ++ index) {
-            auto color = palette[index];
-            image->setColor(index, qRgb(color.r(), color.g(), color.b()));
+        for (auto y = 0; y < height; ++ y) {
+            size_t offset = (size_t)y * (size_t)width;
+            for (auto x = 0; x < width; ++ x) {
+                size_t index = offset + x;
+                int alpha = (is_masked && !mask[index]) * 255;
+                auto& color = palette[data[index]];
+                image->setPixel(x, y, qRgba(color.r(), color.g(), color.b(), alpha));
+            }
         }
-        if (header.mask() >= 2) {
-            image->setColor(header.trans_color(), qRgba(0, 0, 0, 0));
+    } else {
+        for (auto y = 0; y < height; ++ y) {
+            size_t offset = (size_t)y * (size_t)width;
+            for (auto x = 0; x < width; ++ x) {
+                size_t index = offset + x;
+                int alpha = (is_masked && !mask[index]) * 255;
+                uint8_t value = data[index];
+                image->setPixel(x, y, qRgba(value, value, value, alpha));
+            }
         }
-        // for mask:
-        image->setColor(256, qRgba(0, 0, 0, 0));
     }
 
     return true;
