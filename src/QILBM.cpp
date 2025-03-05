@@ -345,7 +345,8 @@ bool ILBMHandler::read(QImage *image) {
         return false;
     }
 
-    if (m_status == Init && !read()) {
+    bool init = m_status == Init;
+    if (init && !read()) {
         qDebug() << "ILBMHandler::read(QImage*): read failed, status:" << statusMessage();
         return false;
     }
@@ -367,10 +368,104 @@ bool ILBMHandler::read(QImage *image) {
         }
     }
 
+    const auto num_planes = header.num_planes();
+
+#if 0
+    // This isn't viewable in gwenview anyway, so don't spin the CPU for no reason.
+    if (init) {
+        QString value;
+        switch (m_image->file_type()) {
+            case FileType_ILBM:
+                value = QLatin1String("ILBM");
+                break;
+
+            case FileType_PBM:
+                value = QLatin1String("PBM");
+                break;
+
+            default:
+                value = QString(QLatin1String("Invalid file type: %1")).arg((int)m_image->file_type());
+                break;
+        }
+
+        image->setText(QLatin1String("Sub-Type"), value);
+        image->setText(QLatin1String("Bit Planes"), QString::number(num_planes));
+
+        auto& camg = m_image->camg();
+        if (camg) {
+            auto viewport_mode = camg->viewport_mode();
+            value.clear();
+
+            if (viewport_mode & CAMG::EHB) {
+                value.append(QLatin1String("EHB"));
+            }
+
+            if (viewport_mode & CAMG::HAM) {
+                if (!value.isEmpty()) {
+                    value.append(QLatin1String(", "));
+                }
+                value.append(QLatin1String("HAM"));
+            }
+
+            if (!value.isEmpty()) {
+                image->setText(QLatin1String("Amiga Viewport Modes"), value);
+            }
+        }
+
+        if (header.x_aspect() != 0) {
+            image->setText(QLatin1String("X-Aspect"), QString::number(header.x_aspect()));
+        }
+
+        if (header.y_aspect() != 0) {
+            image->setText(QLatin1String("Y-Aspect"), QString::number(header.y_aspect()));
+        }
+
+        image->setText(QLatin1String("X-Origin"), QString::number(header.x_origin()));
+        image->setText(QLatin1String("Y-Origin"), QString::number(header.y_origin()));
+
+        if (header.page_width() != 0) {
+            image->setText(QLatin1String("Page-Width"), QString::number(header.page_width()));
+        }
+
+        if (header.page_height() != 0) {
+            image->setText(QLatin1String("Page-Height"), QString::number(header.page_height()));
+        }
+
+        image->setText(QLatin1String("Compression"), QString::number(header.compression()));
+
+        if (header.flags() != 0) {
+            image->setText(QLatin1String("Flags"), QString(QLatin1String("0x%1")).arg(header.flags(), 16));
+        }
+
+        switch (header.mask()) {
+            case 0:
+                break;
+
+            case 1:
+                image->setText(QLatin1String("Transparency"), QLatin1String("Mask"));
+                break;
+
+            case 2:
+                image->setText(QLatin1String("Transparency"), QLatin1String("Transparent Color"));
+                image->setText(QLatin1String("Transparent Color"), QString::number(header.trans_color()));
+                break;
+
+            case 3:
+                image->setText(QLatin1String("Transparency"), QLatin1String("Lasso"));
+                break;
+
+            default:
+                image->setText(QLatin1String("Transparency"), QString::number(header.mask()));
+                break;
+        }
+    }
+#endif
+
+    // TODO: Move the following to ILBM.cpp and write to image->bits() directly.
+    //       Maybe always using an alpha channel for simplicit?
     const auto* body = m_image->body();
     const auto& data = body->data();
     const auto& mask = body->mask();
-    const auto num_planes = header.num_planes();
     const bool not_masked = header.mask() != 1;
 
     if (num_planes == 24) {
