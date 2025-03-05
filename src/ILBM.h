@@ -104,6 +104,7 @@ public:
     CMAP() : m_colors{} {}
 
     inline const std::vector<Color>& colors() const { return m_colors; }
+    inline std::vector<Color>& colors() { return m_colors; }
 
     Result read(MemoryReader& reader);
 };
@@ -113,6 +114,11 @@ private:
     uint32_t m_viewport_mode;
 
 public:
+    enum {
+        HAM = 0x800, // hold and modify
+        EHB = 0x80,  // extra half bright
+    };
+
     static const uint32_t SIZE = 4;
 
     CAMG() : m_viewport_mode(0) {}

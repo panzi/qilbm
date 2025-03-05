@@ -117,6 +117,7 @@ Result ILBM::read(MemoryReader& reader) {
     m_cmap = nullptr;
     m_crngs.clear();
     m_ccrts.clear();
+    m_camg = std::nullopt;
 
     MemoryReader main_chunk_reader { reader, main_chunk_len - 4 };
     while (main_chunk_reader.remaining() > 0) {
@@ -152,6 +153,32 @@ Result ILBM::read(MemoryReader& reader) {
         main_chunk_reader.seek_relative(chunk_len);
     }
 
+    if (m_camg) {
+        auto viewport_mode = m_camg->viewport_mode();
+        if (viewport_mode & CAMG::EHB) {
+            if (!m_cmap) {
+                m_cmap = std::make_unique<CMAP>();
+            }
+
+            auto& colors = m_cmap->colors();
+            if (colors.size() < 64) {
+                colors.resize(64, Color(0, 0, 0));
+            }
+
+            for (size_t index = 32; index < 64; ++ index) {
+                auto color = colors[index - 32];
+                colors[index] = Color(color.r() >> 1, color.g() >> 1, color.b() >> 1);
+            }
+        }
+
+        if (viewport_mode & CAMG::HAM) {
+            if (!m_cmap) {
+                // HAM might access the palette, ensure it exists if HAM is true
+                m_cmap = std::make_unique<CMAP>();
+            }
+        }
+    }
+
     return Result_Ok;
 }
 
@@ -169,7 +196,7 @@ Result CMAP::read(MemoryReader& reader) {
 }
 
 Result CAMG::read(MemoryReader& reader) {
-    if (reader.remaining()< CAMG::SIZE) {
+    if (reader.remaining() < CAMG::SIZE) {
         DEBUG_LOG("truncated CAMG chunk: %zu < %u", reader.remaining(), CAMG::SIZE);
         return Result_ParsingError;
     }
