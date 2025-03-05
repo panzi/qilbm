@@ -2,6 +2,26 @@
 
 #include <climits>
 
+// generated with make_lookup_tables.py
+static const uint8_t COLOR_LOOKUP_TABLE_1BIT[] = { 0, 255 };
+static const uint8_t COLOR_LOOKUP_TABLE_2BITS[] = { 0, 85, 170, 255 };
+static const uint8_t COLOR_LOOKUP_TABLE_3BITS[] = { 0, 36, 73, 109, 146, 182, 219, 255 };
+static const uint8_t COLOR_LOOKUP_TABLE_4BITS[] = { 0, 17, 34, 51, 68, 85, 102, 119, 136, 153, 170, 187, 204, 221, 238, 255 };
+static const uint8_t COLOR_LOOKUP_TABLE_5BITS[] = { 0, 8, 16, 25, 33, 41, 49, 58, 66, 74, 82, 90, 99, 107, 115, 123, 132, 140, 148, 156, 165, 173, 181, 189, 197, 206, 214, 222, 230, 239, 247, 255 };
+static const uint8_t COLOR_LOOKUP_TABLE_6BITS[] = { 0, 4, 8, 12, 16, 20, 24, 28, 32, 36, 40, 45, 49, 53, 57, 61, 65, 69, 73, 77, 81, 85, 89, 93, 97, 101, 105, 109, 113, 117, 121, 125, 130, 134, 138, 142, 146, 150, 154, 158, 162, 166, 170, 174, 178, 182, 186, 190, 194, 198, 202, 206, 210, 215, 219, 223, 227, 231, 235, 239, 243, 247, 251, 255 };
+static const uint8_t COLOR_LOOKUP_TABLE_7BITS[] = { 0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30, 32, 34, 36, 38, 40, 42, 44, 46, 48, 50, 52, 54, 56, 58, 60, 62, 64, 66, 68, 70, 72, 74, 76, 78, 80, 82, 84, 86, 88, 90, 92, 94, 96, 98, 100, 102, 104, 106, 108, 110, 112, 114, 116, 118, 120, 122, 124, 126, 129, 131, 133, 135, 137, 139, 141, 143, 145, 147, 149, 151, 153, 155, 157, 159, 161, 163, 165, 167, 169, 171, 173, 175, 177, 179, 181, 183, 185, 187, 189, 191, 193, 195, 197, 199, 201, 203, 205, 207, 209, 211, 213, 215, 217, 219, 221, 223, 225, 227, 229, 231, 233, 235, 237, 239, 241, 243, 245, 247, 249, 251, 253, 255 };
+
+static const uint8_t *COLOR_LOOKUP_TABLES[8] = {
+    NULL,
+    COLOR_LOOKUP_TABLE_1BIT,
+    COLOR_LOOKUP_TABLE_2BITS,
+    COLOR_LOOKUP_TABLE_3BITS,
+    COLOR_LOOKUP_TABLE_4BITS,
+    COLOR_LOOKUP_TABLE_5BITS,
+    COLOR_LOOKUP_TABLE_6BITS,
+    COLOR_LOOKUP_TABLE_7BITS,
+};
+
 QDebug& operator<<(QDebug& debug, const qilbm::CRNG& crng) {
     bool spaces = debug.autoInsertSpaces();
     debug.nospace() << "CRNG { rate: " << crng.rate()
@@ -379,9 +399,9 @@ bool ILBMHandler::read(QImage *image) {
         auto& camg = m_image->camg();
         if (camg && (camg->viewport_mode() & CAMG::HAM) && (num_planes == 6 || num_planes == 8)) {
             // HAM decoding http://www.etwright.org/lwsdk/docs/filefmts/ilbm.html
-            uint8_t code_shift = num_planes - 2;
-            uint8_t color_shift = 8 - code_shift;
-            uint8_t payload_mask = 0xFF >> color_shift;
+            uint8_t payload_bits = num_planes - 2;
+            uint8_t payload_mask = 0xFF >> (8 - payload_bits);
+            const uint8_t *lookup_table = COLOR_LOOKUP_TABLES[payload_bits];
 
             for (auto y = 0; y < height; ++ y) {
                 QRgb prev_color = qRgb(0, 0, 0);
@@ -391,7 +411,7 @@ bool ILBMHandler::read(QImage *image) {
                     size_t index = offset + x;
                     int alpha = (not_masked || mask[index]) * 255;
                     uint8_t code = data[index];
-                    uint8_t mode = code >> code_shift;
+                    uint8_t mode = code >> payload_bits;
                     QRgb color;
 
                     switch (mode) {
@@ -404,21 +424,21 @@ bool ILBMHandler::read(QImage *image) {
                         case 1:
                         {
                             // blue
-                            uint8_t value = (code & payload_mask) << color_shift;
+                            uint8_t value = lookup_table[code & payload_mask];
                             color = qRgba(qRed(prev_color), qGreen(prev_color), value, alpha);
                             break;
                         }
                         case 2:
                         {
                             // red
-                            uint8_t value = (code & payload_mask) << color_shift;
+                            uint8_t value = lookup_table[code & payload_mask];
                             color = qRgba(value, qGreen(prev_color), qBlue(prev_color), alpha);
                             break;
                         }
                         case 3:
                         {
                             // green
-                            uint8_t value = (code & payload_mask) << color_shift;
+                            uint8_t value = lookup_table[code & payload_mask];
                             color = qRgba(qRed(prev_color), value, qBlue(prev_color), alpha);
                             break;
                         }
@@ -447,14 +467,24 @@ bool ILBMHandler::read(QImage *image) {
         if (m_cycles.size() > 0) {
             ++ m_currentFrame;
         }
-    } else {
-        uint8_t color_shift = 8 - num_planes;
+    } else if (num_planes < 8) {
+        const uint8_t *lookup_table = COLOR_LOOKUP_TABLES[num_planes];
         for (auto y = 0; y < height; ++ y) {
             size_t offset = (size_t)y * (size_t)width;
             for (auto x = 0; x < width; ++ x) {
                 size_t index = offset + x;
                 int alpha = (not_masked || mask[index]) * 255;
-                uint8_t value = data[index] << color_shift;
+                uint8_t value = lookup_table[data[index]];
+                image->setPixel(x, y, qRgba(value, value, value, alpha));
+            }
+        }
+    } else {
+        for (auto y = 0; y < height; ++ y) {
+            size_t offset = (size_t)y * (size_t)width;
+            for (auto x = 0; x < width; ++ x) {
+                size_t index = offset + x;
+                int alpha = (not_masked || mask[index]) * 255;
+                uint8_t value = data[index];
                 image->setPixel(x, y, qRgba(value, value, value, alpha));
             }
         }
