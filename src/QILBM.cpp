@@ -350,9 +350,10 @@ bool ILBMHandler::read(QImage *image) {
     const auto* body = m_image->body();
     const auto& data = body->data();
     const auto& mask = body->mask();
+    const auto num_planes = header.num_planes();
     const bool not_masked = header.mask() != 1;
 
-    if (header.num_planes() == 24) {
+    if (num_planes == 24) {
         for (auto y = 0; y < height; ++ y) {
             size_t mask_offset = (size_t)y * (size_t)width;
             size_t offset = mask_offset * 3;
@@ -362,7 +363,7 @@ bool ILBMHandler::read(QImage *image) {
                 image->setPixel(x, y, qRgba(data[index], data[index + 1], data[index + 2], alpha));
             }
         }
-    } else if (header.num_planes() == 32) {
+    } else if (num_planes == 32) {
         for (auto y = 0; y < height; ++ y) {
             size_t offset = (size_t)y * (size_t)width * 4;
             for (auto x = 0; x < width; ++ x) {
@@ -375,13 +376,71 @@ bool ILBMHandler::read(QImage *image) {
         Palette palette;
         palette.apply_cycles_from(*m_palette, m_cycles, now, m_blend);
 
-        for (auto y = 0; y < height; ++ y) {
-            size_t offset = (size_t)y * (size_t)width;
-            for (auto x = 0; x < width; ++ x) {
-                size_t index = offset + x;
-                int alpha = (not_masked || mask[index]) * 255;
-                auto& color = palette[data[index]];
-                image->setPixel(x, y, qRgba(color.r(), color.g(), color.b(), alpha));
+        auto& camg = m_image->camg();
+        if (camg && (camg->viewport_mode() & CAMG::HAM) && (num_planes == 6 || num_planes == 8)) {
+            // HAM decoding http://www.etwright.org/lwsdk/docs/filefmts/ilbm.html
+            uint8_t code_shift = num_planes - 2;
+            uint8_t color_shift = 8 - code_shift;
+            uint8_t payload_mask = 0xFF >> color_shift;
+
+            for (auto y = 0; y < height; ++ y) {
+                QRgb prev_color = qRgb(0, 0, 0);
+
+                size_t offset = (size_t)y * (size_t)width;
+                for (auto x = 0; x < width; ++ x) {
+                    size_t index = offset + x;
+                    int alpha = (not_masked || mask[index]) * 255;
+                    uint8_t code = data[index];
+                    uint8_t mode = code >> code_shift;
+                    QRgb color;
+
+                    switch (mode) {
+                        case 0:
+                        {
+                            auto& palette_color = palette[code & payload_mask];
+                            color = qRgba(palette_color.r(), palette_color.g(), palette_color.b(), alpha);
+                            break;
+                        }
+                        case 1:
+                        {
+                            // blue
+                            uint8_t value = (code & payload_mask) << color_shift;
+                            color = qRgba(qRed(prev_color), qGreen(prev_color), value, alpha);
+                            break;
+                        }
+                        case 2:
+                        {
+                            // red
+                            uint8_t value = (code & payload_mask) << color_shift;
+                            color = qRgba(value, qGreen(prev_color), qBlue(prev_color), alpha);
+                            break;
+                        }
+                        case 3:
+                        {
+                            // green
+                            uint8_t value = (code & payload_mask) << color_shift;
+                            color = qRgba(qRed(prev_color), value, qBlue(prev_color), alpha);
+                            break;
+                        }
+                        default:
+                            // not possible
+                            color = prev_color;
+                            break;
+                    }
+
+                    image->setPixel(x, y, color);
+                    prev_color = color;
+                }
+            }
+        } else {
+            for (auto y = 0; y < height; ++ y) {
+                size_t offset = (size_t)y * (size_t)width;
+                for (auto x = 0; x < width; ++ x) {
+                    size_t index = offset + x;
+                    int alpha = (not_masked || mask[index]) * 255;
+                    auto& color = palette[data[index]];
+                    image->setPixel(x, y, qRgba(color.r(), color.g(), color.b(), alpha));
+                }
             }
         }
 
@@ -389,12 +448,13 @@ bool ILBMHandler::read(QImage *image) {
             ++ m_currentFrame;
         }
     } else {
+        uint8_t color_shift = 8 - num_planes;
         for (auto y = 0; y < height; ++ y) {
             size_t offset = (size_t)y * (size_t)width;
             for (auto x = 0; x < width; ++ x) {
                 size_t index = offset + x;
                 int alpha = (not_masked || mask[index]) * 255;
-                uint8_t value = data[index];
+                uint8_t value = data[index] << color_shift;
                 image->setPixel(x, y, qRgba(value, value, value, alpha));
             }
         }
