@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-def make_lookup_tables() -> list[list[int]]:
+def make_lookup_tables_old() -> list[list[int]]:
     tables: list[list[int]] = [[]]
     for bits in range(1, 8):
         max_short_val = 0xFF >> (8 - bits)
@@ -17,6 +17,31 @@ def make_lookup_tables() -> list[list[int]]:
                     min_diff = diff
                     best_color = long_val
             table.append(best_color)
+        tables.append(table)
+
+    return tables
+
+# see: https://threadlocalmutex.com/?page_id=60
+conv_funcs = [
+    lambda x: 0,
+    lambda x: x * 255,
+    lambda x: x * 85,
+    lambda x: (x * 146 + 1) >> 2,
+    lambda x: x * 17,
+    lambda x: (x * 527 + 23) >> 6,
+    lambda x: (x * 259 + 33) >> 6,
+    lambda x: (x * 257 + 64) >> 7,
+]
+
+def make_lookup_tables() -> list[list[int]]:
+    tables: list[list[int]] = [[]]
+    for bits in range(1, 8):
+        conv = conv_funcs[bits]
+        max_short_val = 0xFF >> (8 - bits)
+        short_val_count = max_short_val + 1
+        table: list[int] = []
+        for short_val in range(0, short_val_count):
+            table.append(conv(short_val))
         tables.append(table)
 
     return tables
