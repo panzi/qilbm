@@ -397,14 +397,19 @@ bool ILBMHandler::read(QImage *image) {
         palette.apply_cycles_from(*m_palette, m_cycles, now, m_blend);
 
         auto& camg = m_image->camg();
+        // TODO: Does HAM without palettes exist? Is then the palette to be assumed all black?
         if (camg && (camg->viewport_mode() & CAMG::HAM) && (num_planes >= 6 && num_planes <= 8)) {
             // HAM decoding http://www.etwright.org/lwsdk/docs/filefmts/ilbm.html
-            uint8_t payload_bits = num_planes - 2;
-            uint8_t payload_mask = 0xFF >> (8 - payload_bits);
-            const uint8_t *lookup_table = COLOR_LOOKUP_TABLES[payload_bits];
+            const uint8_t payload_bits = num_planes - 2;
+            const uint8_t ham_shift = 8 - payload_bits;
+            const uint8_t ham_mask = (1 << ham_shift) - 1;
+            const uint8_t payload_mask = 0xFF >> ham_shift;
+            //const uint8_t *lookup_table = COLOR_LOOKUP_TABLES[payload_bits];
 
             for (auto y = 0; y < height; ++ y) {
-                QRgb prev_color = qRgb(0, 0, 0);
+                uint8_t r = 0;
+                uint8_t g = 0;
+                uint8_t b = 0;
 
                 size_t offset = (size_t)y * (size_t)width;
                 for (auto x = 0; x < width; ++ x) {
@@ -412,44 +417,41 @@ bool ILBMHandler::read(QImage *image) {
                     int alpha = (not_masked || mask[index]) * 255;
                     uint8_t code = data[index];
                     uint8_t mode = code >> payload_bits;
-                    QRgb color;
+                    uint8_t color_index = code & payload_mask;
 
                     switch (mode) {
                         case 0:
                         {
-                            auto& palette_color = palette[code & payload_mask];
-                            color = qRgba(palette_color.r(), palette_color.g(), palette_color.b(), alpha);
+                            auto& color = palette[color_index];
+                            r = color.r();
+                            g = color.g();
+                            b = color.b();
                             break;
                         }
                         case 1:
                         {
                             // blue
-                            uint8_t value = lookup_table[code & payload_mask];
-                            color = qRgba(qRed(prev_color), qGreen(prev_color), value, alpha);
+                            b = (color_index << ham_shift) | (b & ham_mask);
                             break;
                         }
                         case 2:
                         {
                             // red
-                            uint8_t value = lookup_table[code & payload_mask];
-                            color = qRgba(value, qGreen(prev_color), qBlue(prev_color), alpha);
+                            r = (color_index << ham_shift) | (r & ham_mask);
                             break;
                         }
                         case 3:
                         {
                             // green
-                            uint8_t value = lookup_table[code & payload_mask];
-                            color = qRgba(qRed(prev_color), value, qBlue(prev_color), alpha);
+                            g = (color_index << ham_shift) | (g & ham_mask);
                             break;
                         }
                         default:
                             // not possible
-                            color = prev_color;
                             break;
                     }
 
-                    image->setPixel(x, y, color);
-                    prev_color = color;
+                    image->setPixel(x, y, qRgba(r, g, b, alpha));
                 }
             }
         } else {
@@ -468,6 +470,10 @@ bool ILBMHandler::read(QImage *image) {
             ++ m_currentFrame;
         }
     } else if (num_planes < 8) {
+        // XXX: No idea if colors here should be done like in HAM? Need example files.
+        // const uint8_t color_shift = 8 - num_planes;
+        // const uint8_t color_mask = (1 << color_shift) - 1;
+
         const uint8_t *lookup_table = COLOR_LOOKUP_TABLES[num_planes];
         for (auto y = 0; y < height; ++ y) {
             size_t offset = (size_t)y * (size_t)width;
