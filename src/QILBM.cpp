@@ -397,7 +397,7 @@ bool ILBMHandler::read(QImage *image) {
         palette.apply_cycles_from(*m_palette, m_cycles, now, m_blend);
 
         auto& camg = m_image->camg();
-        if (camg && (camg->viewport_mode() & CAMG::HAM) && (num_planes == 6 || num_planes == 8)) {
+        if (camg && (camg->viewport_mode() & CAMG::HAM) && (num_planes >= 6 && num_planes <= 8)) {
             // HAM decoding http://www.etwright.org/lwsdk/docs/filefmts/ilbm.html
             uint8_t payload_bits = num_planes - 2;
             uint8_t payload_mask = 0xFF >> (8 - payload_bits);
