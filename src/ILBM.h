@@ -7,9 +7,11 @@
 #include <memory>
 #include <stdint.h>
 #include <cmath>
+#include <cstdio>
 
 #include "MemoryReader.h"
 #include "Color.h"
+#include "Palette.h"
 
 namespace qilbm {
 
@@ -150,6 +152,8 @@ public:
     inline uint8_t high() const { return m_high; }
 
     Result read(MemoryReader& reader);
+
+    void print(std::FILE* file) const;
 };
 
 class CCRT {
@@ -177,6 +181,8 @@ public:
     inline uint32_t delay_usec() const { return m_delay_usec; }
 
     Result read(MemoryReader& reader);
+
+    void print(std::FILE* file) const;
 };
 
 class ILBM {
@@ -212,6 +218,25 @@ public:
     Result read(MemoryReader& reader);
 
     static bool can_read(MemoryReader& reader);
+
+    void get_cycles(std::vector<Cycle>& cycles) const;
+
+    std::vector<Cycle> cycles() const {
+        std::vector<Cycle> cycles;
+        get_cycles(cycles);
+        return cycles;
+    }
+
+    std::unique_ptr<Palette> palette() const;
+
+    // TODO
+    void render_frame(
+        const std::unique_ptr<Palette>& palette,
+        const std::vector<Cycle>& cycles,
+        Palette& cycled_palette,
+        uint8_t* pixels,
+        double now
+    ) const;
 };
 
 }

@@ -175,61 +175,12 @@ bool ILBMHandler::read() {
         return false;
     }
 
-    for (auto& crng : m_image->crngs()) {
-        auto low = crng.low();
-        auto high = crng.high();
-        auto rate = crng.rate();
-        if (low < high && rate > 0) {
-            auto flags = crng.flags();
-            if ((flags & 1) != 0) {
-                if (flags > 3) {
-                    qWarning() << "ILBMHandler::read(): Unsupported CRNG flags:" << crng;
-                }
-                m_cycles.emplace_back(
-                    low, high, rate, (flags & 2) != 0
-                );
-            } else if (flags != 0) {
-                qWarning() << "ILBMHandler::read(): Unsupported CRNG flags:" << crng;
-            }
-        }
-    }
-
-    for (auto& ccrt : m_image->ccrts()) {
-        auto low = ccrt.low();
-        auto high = ccrt.high();
-        auto direction = ccrt.direction();
-        if (direction != 0 && low < high) {
-            uint64_t usec = (uint64_t)ccrt.delay_sec() * 1000000 + (uint64_t)ccrt.delay_usec();
-            uint64_t rate = usec * 8903 / 1000000;
-
-            if (direction < -1 || direction > 1) {
-                qWarning() << "ILBMHandler::read(): Unsupported CCRT direction:" << ccrt;
-            }
-
-            if (rate > 0) {
-                m_cycles.emplace_back(
-                    low, high, rate, direction > 0
-                );
-            }
-        }
-    }
+    m_image->get_cycles(m_cycles);
 
     m_currentFrame = 0;
     m_imageCount = 1;
-    const auto* cmap = m_image->cmap();
-    if (cmap != nullptr) {
-        m_palette = std::make_unique<Palette>();
-        Palette& pallete = *m_palette;
-        const auto& colors = cmap->colors();
-        size_t min_size = std::min(pallete.size(), colors.size());
-        for (size_t index = 0; index < min_size; ++ index) {
-            pallete[index] = colors[index];
-        }
-
-        if (m_cycles.size() > 0) {
-            m_imageCount = 0;
-        }
-    }
+    m_palette = m_image->palette();
+    m_imageCount = m_palette && m_cycles.size() > 0 ? 0 : 1;
 
     // qDebug().nospace() << "ILBMHandler::read(): "
     //     << "file_type: " << file_type_name(m_image->file_type())
@@ -372,6 +323,8 @@ bool ILBMHandler::read(QImage *image) {
 
 #if 0
     // This isn't viewable in gwenview anyway, so don't spin the CPU for no reason.
+    // This needs to be a separate KFileMetaData plugin:
+    // https://invent.kde.org/frameworks/kfilemetadata
     if (init) {
         QString value;
         switch (m_image->file_type()) {
@@ -488,8 +441,7 @@ bool ILBMHandler::read(QImage *image) {
         }
     } else if (m_palette) {
         double now = (double)m_currentFrame / (double)m_fps;
-        Palette palette;
-        palette.apply_cycles_from(*m_palette, m_cycles, now, m_blend);
+        m_cycled_palette.apply_cycles_from(*m_palette, m_cycles, now, m_blend);
 
         auto& camg = m_image->camg();
         // TODO: Does HAM without palettes exist? Is then the palette to be assumed all black?
@@ -517,7 +469,7 @@ bool ILBMHandler::read(QImage *image) {
                     switch (mode) {
                         case 0:
                         {
-                            auto& color = palette[color_index];
+                            auto& color = m_cycled_palette[color_index];
                             r = color.r();
                             g = color.g();
                             b = color.b();
@@ -555,7 +507,7 @@ bool ILBMHandler::read(QImage *image) {
                 for (auto x = 0; x < width; ++ x) {
                     size_t index = offset + x;
                     int alpha = (not_masked || mask[index]) * 255;
-                    auto& color = palette[data[index]];
+                    auto& color = m_cycled_palette[data[index]];
                     image->setPixel(x, y, qRgba(color.r(), color.g(), color.b(), alpha));
                 }
             }
