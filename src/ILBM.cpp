@@ -527,17 +527,18 @@ void BODY::decode_line(const std::vector<uint8_t>& line, uint8_t mask, uint16_t 
     switch (file_type) {
         case FileType_ILBM:
             if (num_planes == 24 || num_planes == 32) {
-                // TODO: test!
                 uint_fast16_t channels = num_planes / 8;
+                size_t channel_len = (size_t)plane_len * 8;
+
                 for (uint_fast16_t x = 0; x < width; ++ x) {
-                    auto column = x * channels;
+                    auto byte_offset = x / 8;
+                    auto bit_offset = x % 8;
                     for (uint_fast16_t channel = 0; channel < channels; ++ channel) {
-                        auto index = column + channel;
-                        auto byte_offset = index / 8;
-                        auto bit_offset = index % 8;
+                        size_t offset = channel * channel_len + byte_offset;
                         uint8_t value = 0;
                         for (uint_fast16_t plane_index = 0; plane_index < 8; ++ plane_index) {
-                            size_t byte_index = plane_len * plane_index + byte_offset;
+                            size_t byte_index = offset + plane_len * plane_index;
+                            assert(byte_index < line.size());
                             uint8_t bit = (line[byte_index] >> (7 - bit_offset)) & 1;
                             value |= bit << plane_index;
                         }
