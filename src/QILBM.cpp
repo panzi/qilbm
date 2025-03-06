@@ -428,22 +428,40 @@ bool ILBMHandler::read(QImage *image) {
 
     uint8_t* pixels = (uint8_t*)image->bits();
     const uint8_t* ilbm_pixels = data.data();
-    const size_t pixel_count = (size_t)width * (size_t)height;
+    const size_t line_len = image->bytesPerLine();
 
     if (num_planes == 24) {
         if (is_masked) {
-            size_t out_index = 0;
+            size_t out_line_index = 0;
             size_t ilbm_index = 0;
-            for (size_t index = 0; index < pixel_count; ++ index) {
-                std::memcpy(pixels + out_index, ilbm_pixels + ilbm_index, 3);
-                ilbm_index += 3;
-                out_index += 4;
+            for (auto y = 0; y < height; ++ y) {
+                size_t out_index = out_line_index;
+                for (auto x = 0; x < width; ++ x) {
+                    std::memcpy(pixels + out_index, ilbm_pixels + ilbm_index, 3);
+                    ilbm_index += 3;
+                    out_index += 4;
+                }
+                out_line_index += line_len;
             }
         } else {
-            std::memcpy(pixels, ilbm_pixels, (size_t)width * (size_t)height * 3);
+            size_t ilbm_index = 0;
+            size_t out_index = 0;
+            size_t ilbm_line_len = (size_t)width * 3;
+            for (auto y = 0; y < height; ++ y) {
+                std::memcpy(pixels + out_index, ilbm_pixels + ilbm_index, ilbm_line_len);
+                out_index += line_len;
+                ilbm_index += ilbm_line_len;
+            }
         }
     } else if (num_planes == 32) {
-        std::memcpy(pixels, data.data(), (size_t)width * (size_t)height * 4);
+        size_t ilbm_index = 0;
+        size_t out_index = 0;
+        size_t ilbm_line_len = (size_t)width * 4;
+        for (auto y = 0; y < height; ++ y) {
+            std::memcpy(pixels + out_index, ilbm_pixels + ilbm_index, ilbm_line_len);
+            out_index += line_len;
+            ilbm_index += ilbm_line_len;
+        }
     } else if (m_palette) {
         double now = (double)m_currentFrame / (double)m_fps;
         m_cycled_palette.apply_cycles_from(*m_palette, m_cycles, now, m_blend);
@@ -460,9 +478,10 @@ bool ILBMHandler::read(QImage *image) {
             //const uint8_t *lookup_table = COLOR_LOOKUP_TABLES[payload_bits];
 
             size_t ilbm_index = 0;
-            size_t out_index = 0;
+            size_t out_line_index = 0;
 
             for (auto y = 0; y < height; ++ y) {
+                size_t out_index = out_line_index;
                 uint8_t r = 0;
                 uint8_t g = 0;
                 uint8_t b = 0;
@@ -511,18 +530,25 @@ bool ILBMHandler::read(QImage *image) {
                     out_index += pixel_len;
                     ++ ilbm_index;
                 }
+                out_line_index += line_len;
             }
         } else {
-            size_t out_index = 0;
+            size_t out_line_index = 0;
+            size_t ilbm_index = 0;
 
-            for (size_t ilbm_index = 0; ilbm_index < pixel_count; ++ ilbm_index) {
-                auto color = m_cycled_palette[data[ilbm_index]];
+            for (auto y = 0; y < height; ++ y) {
+                size_t out_index = out_line_index;
+                for (auto x = 0; x < width; ++ x) {
+                    auto color = m_cycled_palette[data[ilbm_index]];
+    
+                    pixels[out_index] = color.r();
+                    pixels[out_index + 1] = color.g();
+                    pixels[out_index + 2] = color.b();
 
-                pixels[out_index] = color.r();
-                pixels[out_index + 1] = color.g();
-                pixels[out_index + 2] = color.b();
-
-                out_index += pixel_len;
+                    ++ ilbm_index;
+                    out_index += pixel_len;
+                }
+                out_line_index += line_len;
             }
         }
 
@@ -536,35 +562,53 @@ bool ILBMHandler::read(QImage *image) {
 
         const uint8_t *lookup_table = COLOR_LOOKUP_TABLES[num_planes];
         size_t pixel_len = 3 + is_masked;
-        size_t out_index = 0;
 
-        for (size_t ilbm_index = 0; ilbm_index < pixel_count; ++ ilbm_index) {
-            uint8_t value = lookup_table[data[ilbm_index]];
-            std::memset(pixels + out_index, value, 3);
-            out_index += pixel_len;
+        size_t out_line_index = 0;
+        size_t ilbm_index = 0;
+
+        for (auto y = 0; y < height; ++ y) {
+            size_t out_index = out_line_index;
+            for (auto x = 0; x < width; ++ x) {
+                uint8_t value = lookup_table[data[ilbm_index]];
+                std::memset(pixels + out_index, value, 3);
+
+                out_index += pixel_len;
+                ++ ilbm_index;
+            }
+            out_line_index += line_len;
         }
     } else {
         size_t ilbm_pixel_len = (num_planes + 7) / 8;
         size_t out_pixel_len = 3 + is_masked;
 
         size_t ilbm_index = 0;
-        size_t out_index = 0;
+        size_t out_line_index = 0;
 
-        for (size_t index = 0; index < pixel_count; ++ index) {
-            uint8_t value = data[ilbm_index];
-            std::memset(pixels + out_index, value, 3);
+        for (auto y = 0; y < height; ++ y) {
+            size_t out_index = out_line_index;
+            for (auto x = 0; x < width; ++ x) {
+                uint8_t value = data[ilbm_index];
+                std::memset(pixels + out_index, value, 3);
 
-            out_index += out_pixel_len;
-            ilbm_index += ilbm_pixel_len;
+                out_index += out_pixel_len;
+                ilbm_index += ilbm_pixel_len;
+            }
+            out_line_index += line_len;
         }
     }
 
     if (is_masked) {
-        size_t out_index = 0;
+        size_t out_line_index = 0;
+        size_t mask_index = 0;
 
-        for (size_t mask_index = 0; mask_index < pixel_count; ++ mask_index) {
-            pixels[out_index + 3] = mask[mask_index] * 255;
-            out_index += 4;
+        for (auto y = 0; y < height; ++ y) {
+            size_t out_index = out_line_index;
+            for (auto x = 0; x < width; ++ x) {
+                pixels[out_index + 3] = mask[mask_index] * 255;
+                out_index += 4;
+                ++ mask_index;
+            }
+            out_line_index += line_len;
         }
     }
 

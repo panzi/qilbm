@@ -283,6 +283,7 @@ Result BODY::read(MemoryReader& reader, FileType file_type, const BMHD& header) 
     }
     const size_t width = header.width();
     const size_t height = header.height();
+    const size_t pixel_count = width * height;
 
     const size_t plane_len = (width + 15) / 16 * 2;
     size_t line_len = num_planes * plane_len;
@@ -293,11 +294,11 @@ Result BODY::read(MemoryReader& reader, FileType file_type, const BMHD& header) 
     line.resize(line_len, 0);
 
     const size_t data_len = height * line_len;
-    const size_t pixel_byte_len = width * height * ((num_planes + 7) / 8);
+    const size_t pixel_byte_len = pixel_count * ((num_planes + 7) / 8);
 
     m_data.reserve(pixel_byte_len);
     if (header.mask() == 1) {
-        m_mask.reserve(width * height);
+        m_mask.reserve(pixel_count);
     }
 
     switch (header.compression()) {
@@ -512,6 +513,11 @@ Result BODY::read(MemoryReader& reader, FileType file_type, const BMHD& header) 
         default:
             LOG_DEBUG("unsupported compression flags: %u", header.compression());
             return Result_Unsupported;
+    }
+
+    if (header.mask() == 1 && m_mask.size() < pixel_count) {
+        LOG_DEBUG("mask == 1, but didn't read enough mask bits: %zu < %zu", m_mask.size(), pixel_count);
+        m_mask.resize(pixel_count, true);
     }
 
     return Result_Ok;
