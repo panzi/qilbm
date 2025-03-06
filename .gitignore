@@ -1,5 +1,7 @@
 /build
 /tmp
 .*
+perf.data
+perf.data.old
 !.gitignore
 !/build/.gitignore

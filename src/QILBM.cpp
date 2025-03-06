@@ -141,6 +141,7 @@ bool ILBMHandler::read() {
     m_image = std::make_unique<ILBM>();
     m_palette = nullptr;
     m_cycles.clear();
+    m_cycled_palette.clear();
 
     auto data = device->readAll();
     MemoryReader reader { (const uint8_t*)data.data(), (size_t)data.size() };
@@ -181,6 +182,10 @@ bool ILBMHandler::read() {
     m_imageCount = 1;
     m_palette = m_image->palette();
     m_imageCount = m_palette && m_cycles.size() > 0 ? 0 : 1;
+
+    auto num_planes = m_image->header().num_planes();
+    const auto& camg = m_image->camg();
+    m_ham = camg && (camg->viewport_mode() & CAMG::HAM) && (num_planes >= 6 && num_planes <= 8);
 
     // qDebug().nospace() << "ILBMHandler::read(): "
     //     << "file_type: " << file_type_name(m_image->file_type())
@@ -242,7 +247,7 @@ int ILBMHandler::nextImageDelay() const {
 static inline QImage::Format qImageFormat(const BMHD& header) {
     const auto num_planes = header.num_planes();
     return
-        num_planes == 32 || header.mask() ? QImage::Format::Format_RGBA8888 :
+        num_planes == 32 || header.mask() == 1 ? QImage::Format::Format_RGBA8888 :
         QImage::Format::Format_RGB888;
 }
 
@@ -419,33 +424,34 @@ bool ILBMHandler::read(QImage *image) {
     const auto* body = m_image->body();
     const auto& data = body->data();
     const auto& mask = body->mask();
-    const bool not_masked = header.mask() != 1;
+    const bool is_masked = header.mask() == 1;
+
+    uint8_t* pixels = (uint8_t*)image->bits();
+    const uint8_t* ilbm_pixels = data.data();
+    const size_t pixel_count = (size_t)width * (size_t)height;
 
     if (num_planes == 24) {
-        for (auto y = 0; y < height; ++ y) {
-            size_t mask_offset = (size_t)y * (size_t)width;
-            size_t offset = mask_offset * 3;
-            for (auto x = 0; x < width; ++ x) {
-                size_t index = offset + x * 3;
-                int alpha = (not_masked || mask[mask_offset + x]) * 255;
-                image->setPixel(x, y, qRgba(data[index], data[index + 1], data[index + 2], alpha));
+        if (is_masked) {
+            size_t out_index = 0;
+            size_t ilbm_index = 0;
+            for (size_t index = 0; index < pixel_count; ++ index) {
+                std::memcpy(pixels + out_index, ilbm_pixels + ilbm_index, 3);
+                ilbm_index += 3;
+                out_index += 4;
             }
+        } else {
+            std::memcpy(pixels, ilbm_pixels, (size_t)width * (size_t)height * 3);
         }
     } else if (num_planes == 32) {
-        for (auto y = 0; y < height; ++ y) {
-            size_t offset = (size_t)y * (size_t)width * 4;
-            for (auto x = 0; x < width; ++ x) {
-                size_t index = offset + x * 4;
-                image->setPixel(x, y, qRgba(data[index], data[index + 1], data[index + 2], data[index + 3]));
-            }
-        }
+        std::memcpy(pixels, data.data(), (size_t)width * (size_t)height * 4);
     } else if (m_palette) {
         double now = (double)m_currentFrame / (double)m_fps;
         m_cycled_palette.apply_cycles_from(*m_palette, m_cycles, now, m_blend);
 
-        auto& camg = m_image->camg();
+        size_t pixel_len = 3 + is_masked;
+
         // TODO: Does HAM without palettes exist? Is then the palette to be assumed all black?
-        if (camg && (camg->viewport_mode() & CAMG::HAM) && (num_planes >= 6 && num_planes <= 8)) {
+        if (m_ham) {
             // HAM decoding http://www.etwright.org/lwsdk/docs/filefmts/ilbm.html
             const uint8_t payload_bits = num_planes - 2;
             const uint8_t ham_shift = 8 - payload_bits;
@@ -453,16 +459,16 @@ bool ILBMHandler::read(QImage *image) {
             const uint8_t payload_mask = 0xFF >> ham_shift;
             //const uint8_t *lookup_table = COLOR_LOOKUP_TABLES[payload_bits];
 
+            size_t ilbm_index = 0;
+            size_t out_index = 0;
+
             for (auto y = 0; y < height; ++ y) {
                 uint8_t r = 0;
                 uint8_t g = 0;
                 uint8_t b = 0;
 
-                size_t offset = (size_t)y * (size_t)width;
                 for (auto x = 0; x < width; ++ x) {
-                    size_t index = offset + x;
-                    int alpha = (not_masked || mask[index]) * 255;
-                    uint8_t code = data[index];
+                    uint8_t code = data[ilbm_index];
                     uint8_t mode = code >> payload_bits;
                     uint8_t color_index = code & payload_mask;
 
@@ -498,18 +504,25 @@ bool ILBMHandler::read(QImage *image) {
                             break;
                     }
 
-                    image->setPixel(x, y, qRgba(r, g, b, alpha));
+                    pixels[out_index] = r;
+                    pixels[out_index + 1] = g;
+                    pixels[out_index + 2] = b;
+
+                    out_index += pixel_len;
+                    ++ ilbm_index;
                 }
             }
         } else {
-            for (auto y = 0; y < height; ++ y) {
-                size_t offset = (size_t)y * (size_t)width;
-                for (auto x = 0; x < width; ++ x) {
-                    size_t index = offset + x;
-                    int alpha = (not_masked || mask[index]) * 255;
-                    auto& color = m_cycled_palette[data[index]];
-                    image->setPixel(x, y, qRgba(color.r(), color.g(), color.b(), alpha));
-                }
+            size_t out_index = 0;
+
+            for (size_t ilbm_index = 0; ilbm_index < pixel_count; ++ ilbm_index) {
+                auto color = m_cycled_palette[data[ilbm_index]];
+
+                pixels[out_index] = color.r();
+                pixels[out_index + 1] = color.g();
+                pixels[out_index + 2] = color.b();
+
+                out_index += pixel_len;
             }
         }
 
@@ -522,24 +535,36 @@ bool ILBMHandler::read(QImage *image) {
         // const uint8_t color_mask = (1 << color_shift) - 1;
 
         const uint8_t *lookup_table = COLOR_LOOKUP_TABLES[num_planes];
-        for (auto y = 0; y < height; ++ y) {
-            size_t offset = (size_t)y * (size_t)width;
-            for (auto x = 0; x < width; ++ x) {
-                size_t index = offset + x;
-                int alpha = (not_masked || mask[index]) * 255;
-                uint8_t value = lookup_table[data[index]];
-                image->setPixel(x, y, qRgba(value, value, value, alpha));
-            }
+        size_t pixel_len = 3 + is_masked;
+        size_t out_index = 0;
+
+        for (size_t ilbm_index = 0; ilbm_index < pixel_count; ++ ilbm_index) {
+            uint8_t value = lookup_table[data[ilbm_index]];
+            std::memset(pixels + out_index, value, 3);
+            out_index += pixel_len;
         }
     } else {
-        for (auto y = 0; y < height; ++ y) {
-            size_t offset = (size_t)y * (size_t)width;
-            for (auto x = 0; x < width; ++ x) {
-                size_t index = offset + x;
-                int alpha = (not_masked || mask[index]) * 255;
-                uint8_t value = data[index];
-                image->setPixel(x, y, qRgba(value, value, value, alpha));
-            }
+        size_t ilbm_pixel_len = (num_planes + 7) / 8;
+        size_t out_pixel_len = 3 + is_masked;
+
+        size_t ilbm_index = 0;
+        size_t out_index = 0;
+
+        for (size_t index = 0; index < pixel_count; ++ index) {
+            uint8_t value = data[ilbm_index];
+            std::memset(pixels + out_index, value, 3);
+
+            out_index += out_pixel_len;
+            ilbm_index += ilbm_pixel_len;
+        }
+    }
+
+    if (is_masked) {
+        size_t out_index = 0;
+
+        for (size_t mask_index = 0; mask_index < pixel_count; ++ mask_index) {
+            pixels[out_index + 3] = mask[mask_index] * 255;
+            out_index += 4;
         }
     }
 

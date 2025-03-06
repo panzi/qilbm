@@ -228,15 +228,6 @@ public:
     }
 
     std::unique_ptr<Palette> palette() const;
-
-    // TODO
-    void render_frame(
-        const std::unique_ptr<Palette>& palette,
-        const std::vector<Cycle>& cycles,
-        Palette& cycled_palette,
-        uint8_t* pixels,
-        double now
-    ) const;
 };
 
 }

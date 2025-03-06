@@ -55,6 +55,10 @@ public:
         std::rotate(m_data.begin() + low, m_data.begin() + high + 1 - distance, m_data.begin() + high + 1);
     }
 
+    inline void clear() {
+        m_data.fill(Color(0, 0, 0));
+    }
+
     void apply_cycle(const Cycle& cycle, double now);
     void apply_cycle_blended(const Palette& palette, const Cycle& cycle, double now);
     void apply_cycles(const std::vector<Cycle>& cycles, double now);
