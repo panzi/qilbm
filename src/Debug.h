@@ -4,11 +4,19 @@
 
 #include <cstdio>
 
+#if defined(__GNUC__) || defined(__clang__)
+    #define DEBUG_FUNC_SIG __PRETTY_FUNCTION__
+#elif defined(_MSC_VER)
+    #define DEBUG_FUNC_SIG __FUNCSIG__
+#else
+    #define DEBUG_FUNC_SIG __func__
+#endif
+
 #define LOG_MESSAGE(FILE, LEVEL, FMT, ...) \
-    std::fprintf((FILE), "%s:%d: [QILBM] %s: %s: " FMT "\n", __FILE__, __LINE__, (LEVEL), __func__ __VA_OPT__(,) __VA_ARGS__)
+    std::fprintf((FILE), "%s:%d: [QILBM] %s: %s: " FMT "\n", __FILE__, __LINE__, (LEVEL), DEBUG_FUNC_SIG __VA_OPT__(,) __VA_ARGS__)
 
 #define LOG_MESSAGE_OBJ(FILE, LEVEL, FMT, OBJ, ...) \
-    std::fprintf((FILE), "%s:%d: [QILBM] %s: %s: " FMT " ", __FILE__, __LINE__, (LEVEL), __func__ __VA_OPT__(,) __VA_ARGS__); \
+    std::fprintf((FILE), "%s:%d: [QILBM] %s: %s: " FMT " ", __FILE__, __LINE__, (LEVEL), DEBUG_FUNC_SIG __VA_OPT__(,) __VA_ARGS__); \
     (OBJ).print((FILE)); \
     std::fputc('\n', (FILE))
 

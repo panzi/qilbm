@@ -46,7 +46,9 @@ void ILBMPlugin::readEnvVars() {
     uint fps = env_fps.isEmpty() ? DEFAULT_FPS :
         env_fps.toUInt(&ok);
     if (!ok || fps < 1) {
-        qDebug() << "ILBMPlugin::readEnvVars(): illegal value for QILBM_FPS environment variable: " << env_fps;
+        qWarning().nospace() << Q_FUNC_INFO << ": illegal value for QILBM_FPS environment variable: " << env_fps;
+    } else if (fps > 1000) {
+        qWarning().nospace() << Q_FUNC_INFO << ": value of QILBM_FPS environment variable is too big, limited to 1000 fps: " << env_fps;
     } else {
         m_fps = fps;
     }
@@ -57,7 +59,7 @@ void ILBMPlugin::readEnvVars() {
         env_blend.compare(QStringLiteral("true"), Qt::CaseInsensitive) == 0 ||
         env_blend == QStringLiteral("1");
     if (!ok) {
-        qDebug() << "ILBMPlugin::readEnvVars(): illegal value for QILBM_BLEND environment variable: " << env_blend;
+        qWarning().nospace() << Q_FUNC_INFO << ": illegal value for QILBM_BLEND environment variable: " << env_blend;
     } else {
         m_blend = blend;
     }
@@ -103,7 +105,7 @@ bool ILBMHandler::canRead() const {
 
 bool ILBMHandler::canRead(QIODevice *device) {
     if (device == nullptr) {
-        qDebug() << "ILBMHandler::canRead(QIODevice*): device is null";
+        qDebug().nospace() << Q_FUNC_INFO << ": device is null";
         return false;
     }
     auto data = device->peek(12);
@@ -114,7 +116,7 @@ bool ILBMHandler::canRead(QIODevice *device) {
 bool ILBMHandler::read() {
     auto* device = this->device();
     if (device == nullptr) {
-        qDebug() << "ILBMHandler::read(): device is null";
+        qDebug().nospace() << Q_FUNC_INFO << ": device is null";
         return false;
     }
 
@@ -140,13 +142,13 @@ bool ILBMHandler::read() {
             return false;
 
         default:
-            qDebug() << "ILBMHandler::read(): illegal result value: " << result;
+            qDebug().nospace() << Q_FUNC_INFO << ": illegal result value: " << result;
             m_status = Unsupported;
             return false;
     }
 
     if (m_renderer.image().body() == nullptr) {
-        qDebug() << "ILBMHandler::read(): missing body";
+        qDebug().nospace() << Q_FUNC_INFO << ": missing body";
         m_status = NoBody;
         return false;
     }
@@ -242,18 +244,18 @@ bool ILBMHandler::read(QImage *image) {
     //     << ", this: " << this;
 
     if (image == nullptr) {
-        qDebug() << "ILBMHandler::read(QImage*): image is null";
+        qDebug().nospace() << Q_FUNC_INFO << ": image is null";
         return false;
     }
 
     bool init = m_status == Init;
     if (init && !read()) {
-        qDebug() << "ILBMHandler::read(QImage*): read failed, status:" << statusMessage();
+        qDebug().nospace() << Q_FUNC_INFO << ": read failed, status: " << statusMessage();
         return false;
     }
 
     if (m_status != Ok) {
-        qDebug() << "ILBMHandler::read(QImage*): status:" << statusMessage();
+        qDebug().nospace() << Q_FUNC_INFO << ": status: " << statusMessage();
         return false;
     }
 
@@ -264,12 +266,13 @@ bool ILBMHandler::read(QImage *image) {
 
     if (width != image->width() || height != image->height() || format != image->format()) {
         if (!allocateImage(QSize(width, height), format, image)) {
-            qDebug() << "ILBMHandler::read(QImage*): error allocating image";
+            qDebug().nospace() << Q_FUNC_INFO << ": error allocating image";
             return false;
         }
     }
 
     double now = (double)m_currentFrame / (double)m_fps;
+    //qInfo() << "FPS:" << m_fps << "delay:" << (1000 / m_fps) << "ms" << "now:" << now;
     m_renderer.render((uint8_t*)image->bits(), image->bytesPerLine(), now, m_blend);
 
     if (m_renderer.is_animated()) {

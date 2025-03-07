@@ -65,7 +65,7 @@ public:
     inline uint fps() const { return m_fps; }
     void setFps(uint fps) {
         if (fps > 0) {
-            m_fps = fps;
+            m_fps = fps > 1000 ? 1000 : fps;
         }
     }
 
@@ -104,7 +104,7 @@ public:
     inline uint fps() const { return m_fps; }
     void setFps(uint fps) {
         if (fps > 0) {
-            m_fps = fps;
+            m_fps = fps > 1000 ? 1000 : fps;
         }
     }
 };
