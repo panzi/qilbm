@@ -41,7 +41,7 @@ using namespace qilbm;
 const uint qilbm::DEFAULT_FPS = 60;
 
 void ILBMPlugin::readEnvVars() {
-    auto env_fps = QString::fromLocal8Bit(qgetenv("QILBM_FPS"));
+    auto env_fps = QString::fromLocal8Bit(qgetenv("QILBM_FPS")).trimmed();
     bool ok = true;
     uint fps = env_fps.isEmpty() ? DEFAULT_FPS :
         env_fps.toUInt(&ok);
@@ -53,7 +53,7 @@ void ILBMPlugin::readEnvVars() {
         m_fps = fps;
     }
 
-    auto env_blend = QString::fromLocal8Bit(qgetenv("QILBM_BLEND"));
+    auto env_blend = QString::fromLocal8Bit(qgetenv("QILBM_BLEND")).trimmed();
     ok = true;
     bool blend = env_blend.isEmpty() ? false :
         env_blend.compare(QStringLiteral("true"), Qt::CaseInsensitive) == 0 ||
