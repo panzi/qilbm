@@ -230,6 +230,28 @@ public:
     std::unique_ptr<Palette> palette() const;
 };
 
+class Renderer {
+private:
+    ILBM m_image;
+    std::unique_ptr<Palette> m_palette;
+    Palette m_cycled_palette;
+    std::vector<Cycle> m_cycles;
+    bool m_ham;
+
+public:
+    Renderer() :
+        m_image(), m_palette(), m_cycled_palette(), m_cycles(), m_ham(false) {}
+
+    inline const ILBM& image() const { return m_image; }
+    inline const Palette* palette() const { return m_palette.get(); }
+    inline const std::vector<Cycle>& cycles() const { return m_cycles; }
+    inline bool is_ham() const { return m_ham; }
+    inline bool is_animated() const { return m_palette && m_cycles.size() > 0; }
+
+    Result read(MemoryReader& reader);
+    void render(uint8_t* pixels, size_t pitch, double now, bool blend);
+};
+
 }
 
 #endif

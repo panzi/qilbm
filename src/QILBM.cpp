@@ -2,26 +2,6 @@
 
 #include <climits>
 
-// generated with make_lookup_tables.py
-static const uint8_t COLOR_LOOKUP_TABLE_1BIT[] = { 0, 255 };
-static const uint8_t COLOR_LOOKUP_TABLE_2BITS[] = { 0, 85, 170, 255 };
-static const uint8_t COLOR_LOOKUP_TABLE_3BITS[] = { 0, 36, 73, 109, 146, 182, 219, 255 };
-static const uint8_t COLOR_LOOKUP_TABLE_4BITS[] = { 0, 17, 34, 51, 68, 85, 102, 119, 136, 153, 170, 187, 204, 221, 238, 255 };
-static const uint8_t COLOR_LOOKUP_TABLE_5BITS[] = { 0, 8, 16, 25, 33, 41, 49, 58, 66, 74, 82, 90, 99, 107, 115, 123, 132, 140, 148, 156, 165, 173, 181, 189, 197, 206, 214, 222, 230, 239, 247, 255 };
-static const uint8_t COLOR_LOOKUP_TABLE_6BITS[] = { 0, 4, 8, 12, 16, 20, 24, 28, 32, 36, 40, 45, 49, 53, 57, 61, 65, 69, 73, 77, 81, 85, 89, 93, 97, 101, 105, 109, 113, 117, 121, 125, 130, 134, 138, 142, 146, 150, 154, 158, 162, 166, 170, 174, 178, 182, 186, 190, 194, 198, 202, 206, 210, 215, 219, 223, 227, 231, 235, 239, 243, 247, 251, 255 };
-static const uint8_t COLOR_LOOKUP_TABLE_7BITS[] = { 0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30, 32, 34, 36, 38, 40, 42, 44, 46, 48, 50, 52, 54, 56, 58, 60, 62, 64, 66, 68, 70, 72, 74, 76, 78, 80, 82, 84, 86, 88, 90, 92, 94, 96, 98, 100, 102, 104, 106, 108, 110, 112, 114, 116, 118, 120, 122, 124, 126, 129, 131, 133, 135, 137, 139, 141, 143, 145, 147, 149, 151, 153, 155, 157, 159, 161, 163, 165, 167, 169, 171, 173, 175, 177, 179, 181, 183, 185, 187, 189, 191, 193, 195, 197, 199, 201, 203, 205, 207, 209, 211, 213, 215, 217, 219, 221, 223, 225, 227, 229, 231, 233, 235, 237, 239, 241, 243, 245, 247, 249, 251, 253, 255 };
-
-static const uint8_t *COLOR_LOOKUP_TABLES[8] = {
-    NULL,
-    COLOR_LOOKUP_TABLE_1BIT,
-    COLOR_LOOKUP_TABLE_2BITS,
-    COLOR_LOOKUP_TABLE_3BITS,
-    COLOR_LOOKUP_TABLE_4BITS,
-    COLOR_LOOKUP_TABLE_5BITS,
-    COLOR_LOOKUP_TABLE_6BITS,
-    COLOR_LOOKUP_TABLE_7BITS,
-};
-
 QDebug& operator<<(QDebug& debug, const qilbm::CRNG& crng) {
     bool spaces = debug.autoInsertSpaces();
     debug.nospace() << "CRNG { rate: " << crng.rate()
@@ -138,14 +118,9 @@ bool ILBMHandler::read() {
         return false;
     }
 
-    m_image = std::make_unique<ILBM>();
-    m_palette = nullptr;
-    m_cycles.clear();
-    m_cycled_palette.clear();
-
     auto data = device->readAll();
     MemoryReader reader { (const uint8_t*)data.data(), (size_t)data.size() };
-    Result result = m_image->read(reader);
+    Result result = m_renderer.read(reader);
 
     switch (result) {
         case Result_Ok:
@@ -170,43 +145,20 @@ bool ILBMHandler::read() {
             return false;
     }
 
-    if (m_image->body() == nullptr) {
+    if (m_renderer.image().body() == nullptr) {
         qDebug() << "ILBMHandler::read(): missing body";
         m_status = NoBody;
         return false;
     }
 
-    m_image->get_cycles(m_cycles);
-
     m_currentFrame = 0;
-    m_imageCount = 1;
-    m_palette = m_image->palette();
-    m_imageCount = m_palette && m_cycles.size() > 0 ? 0 : 1;
-
-    auto num_planes = m_image->header().num_planes();
-    const auto& camg = m_image->camg();
-    m_ham = camg && (camg->viewport_mode() & CAMG::HAM) && (num_planes >= 6 && num_planes <= 8);
-
-    // qDebug().nospace() << "ILBMHandler::read(): "
-    //     << "file_type: " << file_type_name(m_image->file_type())
-    //     << ", num_planes: " << m_image->header().num_planes()
-    //     << ", compression: " << m_image->header().compression()
-    //     << ", mask: " << m_image->header().mask()
-    //     << ", trans_color: " << m_image->header().trans_color()
-    //     << ", has palette: " << (m_image->cmap() != nullptr ? "true" : "false")
-    //     << ", imageCount: " << m_imageCount
-    //     << ", is animated: " << option(ImageOption::Animation)
-    //     << ", this: " << this;
+    m_imageCount = m_renderer.is_animated() ? 0 : 1;
 
     return true;
 }
 
 QRect ILBMHandler::currentImageRect() const {
-    if (!m_image) {
-        return QRect();
-    }
-
-    auto& header = m_image->header();
+    auto& header = m_renderer.image().header();
     return QRect(0, 0, header.width(), header.height());
 }
 
@@ -215,7 +167,7 @@ bool ILBMHandler::jumpToImage(int imageNumber) {
         return false;
     }
 
-    if (m_palette && m_cycles.size() > 0) {
+    if (m_renderer.is_animated()) {
         m_currentFrame = imageNumber;
         return true;
     }
@@ -229,7 +181,7 @@ bool ILBMHandler::jumpToImage(int imageNumber) {
 }
 
 bool ILBMHandler::jumpToNextImage() {
-    if (m_palette && m_cycles.size() > 0) {
+    if (m_renderer.is_animated()) {
         m_currentFrame ++;
         return true;
     }
@@ -238,7 +190,7 @@ bool ILBMHandler::jumpToNextImage() {
 }
 
 int ILBMHandler::nextImageDelay() const {
-    if (m_palette && m_cycles.size() > 0) {
+    if (m_renderer.is_animated()) {
         return 1000 / m_fps;
     }
     return 0;
@@ -255,22 +207,15 @@ QVariant ILBMHandler::option(ImageOption option) const {
     switch (option) {
         case ImageOption::Size:
         {
-            if (!m_image) {
-                return QVariant();
-            }
-            auto& header = m_image->header();
+            auto& header = m_renderer.image().header();
             return QSize(header.width(), header.height());
         }
         case ImageOption::Animation:
-            return (bool)(m_palette && m_cycles.size() > 0);
+            return m_renderer.is_animated();
 
         case ImageOption::ImageFormat:
-        {
-            if (!m_image) {
-                return QVariant();
-            }
-            return qImageFormat(m_image->header());
-        }
+            return qImageFormat(m_renderer.image().header());
+
         default:
             return QVariant();
     }
@@ -307,12 +252,12 @@ bool ILBMHandler::read(QImage *image) {
         return false;
     }
 
-    if (m_status != Ok || !m_image) {
-        qDebug() << "ILBMHandler::read(QImage*): m_image is null! status:" << statusMessage();
+    if (m_status != Ok) {
+        qDebug() << "ILBMHandler::read(QImage*): status:" << statusMessage();
         return false;
     }
 
-    const auto& header = m_image->header();
+    const auto& header = m_renderer.image().header();
     const auto width = header.width();
     const auto height = header.height();
     const auto format = qImageFormat(header);
@@ -324,292 +269,11 @@ bool ILBMHandler::read(QImage *image) {
         }
     }
 
-    const auto num_planes = header.num_planes();
+    double now = (double)m_currentFrame / (double)m_fps;
+    m_renderer.render((uint8_t*)image->bits(), image->bytesPerLine(), now, m_blend);
 
-#if 0
-    // This isn't viewable in gwenview anyway, so don't spin the CPU for no reason.
-    // This needs to be a separate KFileMetaData plugin:
-    // https://invent.kde.org/frameworks/kfilemetadata
-    if (init) {
-        QString value;
-        switch (m_image->file_type()) {
-            case FileType_ILBM:
-                value = QLatin1String("ILBM");
-                break;
-
-            case FileType_PBM:
-                value = QLatin1String("PBM");
-                break;
-
-            default:
-                value = QString(QLatin1String("Invalid file type: %1")).arg((int)m_image->file_type());
-                break;
-        }
-
-        image->setText(QLatin1String("Sub-Type"), value);
-        image->setText(QLatin1String("Bit Planes"), QString::number(num_planes));
-
-        auto& camg = m_image->camg();
-        if (camg) {
-            auto viewport_mode = camg->viewport_mode();
-            value.clear();
-
-            if (viewport_mode & CAMG::EHB) {
-                value.append(QLatin1String("EHB"));
-            }
-
-            if (viewport_mode & CAMG::HAM) {
-                if (!value.isEmpty()) {
-                    value.append(QLatin1String(", "));
-                }
-                value.append(QLatin1String("HAM"));
-            }
-
-            if (!value.isEmpty()) {
-                image->setText(QLatin1String("Amiga Viewport Modes"), value);
-            }
-        }
-
-        if (header.x_aspect() != 0) {
-            image->setText(QLatin1String("X-Aspect"), QString::number(header.x_aspect()));
-        }
-
-        if (header.y_aspect() != 0) {
-            image->setText(QLatin1String("Y-Aspect"), QString::number(header.y_aspect()));
-        }
-
-        image->setText(QLatin1String("X-Origin"), QString::number(header.x_origin()));
-        image->setText(QLatin1String("Y-Origin"), QString::number(header.y_origin()));
-
-        if (header.page_width() != 0) {
-            image->setText(QLatin1String("Page-Width"), QString::number(header.page_width()));
-        }
-
-        if (header.page_height() != 0) {
-            image->setText(QLatin1String("Page-Height"), QString::number(header.page_height()));
-        }
-
-        image->setText(QLatin1String("Compression"), QString::number(header.compression()));
-
-        if (header.flags() != 0) {
-            image->setText(QLatin1String("Flags"), QString(QLatin1String("0x%1")).arg(header.flags(), 16));
-        }
-
-        switch (header.mask()) {
-            case 0:
-                break;
-
-            case 1:
-                image->setText(QLatin1String("Transparency"), QLatin1String("Mask"));
-                break;
-
-            case 2:
-                image->setText(QLatin1String("Transparency"), QLatin1String("Transparent Color"));
-                image->setText(QLatin1String("Transparent Color"), QString::number(header.trans_color()));
-                break;
-
-            case 3:
-                image->setText(QLatin1String("Transparency"), QLatin1String("Lasso"));
-                break;
-
-            default:
-                image->setText(QLatin1String("Transparency"), QString::number(header.mask()));
-                break;
-        }
-    }
-#endif
-
-    // TODO: Move the following to ILBM.cpp and write to image->bits() directly.
-    //       Maybe always using an alpha channel for simplicit?
-    const auto* body = m_image->body();
-    const auto& data = body->data();
-    const auto& mask = body->mask();
-    const bool is_masked = header.mask() == 1;
-
-    uint8_t* pixels = (uint8_t*)image->bits();
-    const uint8_t* ilbm_pixels = data.data();
-    const size_t line_len = image->bytesPerLine();
-
-    if (num_planes == 24) {
-        if (is_masked) {
-            size_t out_line_index = 0;
-            size_t ilbm_index = 0;
-            for (auto y = 0; y < height; ++ y) {
-                size_t out_index = out_line_index;
-                for (auto x = 0; x < width; ++ x) {
-                    std::memcpy(pixels + out_index, ilbm_pixels + ilbm_index, 3);
-                    ilbm_index += 3;
-                    out_index += 4;
-                }
-                out_line_index += line_len;
-            }
-        } else {
-            size_t ilbm_index = 0;
-            size_t out_index = 0;
-            size_t ilbm_line_len = (size_t)width * 3;
-            for (auto y = 0; y < height; ++ y) {
-                std::memcpy(pixels + out_index, ilbm_pixels + ilbm_index, ilbm_line_len);
-                out_index += line_len;
-                ilbm_index += ilbm_line_len;
-            }
-        }
-    } else if (num_planes == 32) {
-        size_t ilbm_index = 0;
-        size_t out_index = 0;
-        size_t ilbm_line_len = (size_t)width * 4;
-        for (auto y = 0; y < height; ++ y) {
-            std::memcpy(pixels + out_index, ilbm_pixels + ilbm_index, ilbm_line_len);
-            out_index += line_len;
-            ilbm_index += ilbm_line_len;
-        }
-    } else if (m_palette) {
-        double now = (double)m_currentFrame / (double)m_fps;
-        m_cycled_palette.apply_cycles_from(*m_palette, m_cycles, now, m_blend);
-
-        size_t pixel_len = 3 + is_masked;
-
-        // TODO: Does HAM without palettes exist? Is then the palette to be assumed all black?
-        if (m_ham) {
-            // HAM decoding http://www.etwright.org/lwsdk/docs/filefmts/ilbm.html
-            const uint8_t payload_bits = num_planes - 2;
-            const uint8_t ham_shift = 8 - payload_bits;
-            const uint8_t ham_mask = (1 << ham_shift) - 1;
-            const uint8_t payload_mask = 0xFF >> ham_shift;
-            //const uint8_t *lookup_table = COLOR_LOOKUP_TABLES[payload_bits];
-
-            size_t ilbm_index = 0;
-            size_t out_line_index = 0;
-
-            for (auto y = 0; y < height; ++ y) {
-                size_t out_index = out_line_index;
-                uint8_t r = 0;
-                uint8_t g = 0;
-                uint8_t b = 0;
-
-                for (auto x = 0; x < width; ++ x) {
-                    uint8_t code = data[ilbm_index];
-                    uint8_t mode = code >> payload_bits;
-                    uint8_t color_index = code & payload_mask;
-
-                    switch (mode) {
-                        case 0:
-                        {
-                            auto& color = m_cycled_palette[color_index];
-                            r = color.r();
-                            g = color.g();
-                            b = color.b();
-                            break;
-                        }
-                        case 1:
-                        {
-                            // blue
-                            b = (color_index << ham_shift) | (b & ham_mask);
-                            break;
-                        }
-                        case 2:
-                        {
-                            // red
-                            r = (color_index << ham_shift) | (r & ham_mask);
-                            break;
-                        }
-                        case 3:
-                        {
-                            // green
-                            g = (color_index << ham_shift) | (g & ham_mask);
-                            break;
-                        }
-                        default:
-                            // not possible
-                            break;
-                    }
-
-                    pixels[out_index] = r;
-                    pixels[out_index + 1] = g;
-                    pixels[out_index + 2] = b;
-
-                    out_index += pixel_len;
-                    ++ ilbm_index;
-                }
-                out_line_index += line_len;
-            }
-        } else {
-            size_t out_line_index = 0;
-            size_t ilbm_index = 0;
-
-            for (auto y = 0; y < height; ++ y) {
-                size_t out_index = out_line_index;
-                for (auto x = 0; x < width; ++ x) {
-                    auto color = m_cycled_palette[data[ilbm_index]];
-    
-                    pixels[out_index] = color.r();
-                    pixels[out_index + 1] = color.g();
-                    pixels[out_index + 2] = color.b();
-
-                    ++ ilbm_index;
-                    out_index += pixel_len;
-                }
-                out_line_index += line_len;
-            }
-        }
-
-        if (m_cycles.size() > 0) {
-            ++ m_currentFrame;
-        }
-    } else if (num_planes < 8) {
-        // XXX: No idea if colors here should be done like in HAM? Need example files.
-        // const uint8_t color_shift = 8 - num_planes;
-        // const uint8_t color_mask = (1 << color_shift) - 1;
-
-        const uint8_t *lookup_table = COLOR_LOOKUP_TABLES[num_planes];
-        size_t pixel_len = 3 + is_masked;
-
-        size_t out_line_index = 0;
-        size_t ilbm_index = 0;
-
-        for (auto y = 0; y < height; ++ y) {
-            size_t out_index = out_line_index;
-            for (auto x = 0; x < width; ++ x) {
-                uint8_t value = lookup_table[data[ilbm_index]];
-                std::memset(pixels + out_index, value, 3);
-
-                out_index += pixel_len;
-                ++ ilbm_index;
-            }
-            out_line_index += line_len;
-        }
-    } else {
-        size_t ilbm_pixel_len = (num_planes + 7) / 8;
-        size_t out_pixel_len = 3 + is_masked;
-
-        size_t ilbm_index = 0;
-        size_t out_line_index = 0;
-
-        for (auto y = 0; y < height; ++ y) {
-            size_t out_index = out_line_index;
-            for (auto x = 0; x < width; ++ x) {
-                uint8_t value = data[ilbm_index];
-                std::memset(pixels + out_index, value, 3);
-
-                out_index += out_pixel_len;
-                ilbm_index += ilbm_pixel_len;
-            }
-            out_line_index += line_len;
-        }
-    }
-
-    if (is_masked) {
-        size_t out_line_index = 0;
-        size_t mask_index = 0;
-
-        for (auto y = 0; y < height; ++ y) {
-            size_t out_index = out_line_index;
-            for (auto x = 0; x < width; ++ x) {
-                pixels[out_index + 3] = mask[mask_index] * 255;
-                out_index += 4;
-                ++ mask_index;
-            }
-            out_line_index += line_len;
-        }
+    if (m_renderer.is_animated()) {
+        ++ m_currentFrame;
     }
 
     return true;

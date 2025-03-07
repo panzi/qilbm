@@ -33,22 +33,12 @@ private:
     uint m_fps;
     int m_imageCount;
     int m_currentFrame;
-    bool m_ham;
-    std::unique_ptr<ILBM> m_image;
-    std::unique_ptr<Palette> m_palette;
-    Palette m_cycled_palette;
-    std::vector<Cycle> m_cycles;
+    Renderer m_renderer;
 
 public:
-    ILBMHandler() :
-        QImageIOHandler(), m_status(Init), m_blend(false), m_fps(DEFAULT_FPS),
-        m_imageCount(0), m_currentFrame(-1), m_ham(false),
-        m_image(), m_palette(), m_cycled_palette(), m_cycles() {}
-
-    ILBMHandler(bool blend, uint fps) :
+    ILBMHandler(bool blend = false, uint fps = DEFAULT_FPS) :
         QImageIOHandler(), m_status(Init), m_blend(blend), m_fps(fps),
-        m_imageCount(0), m_currentFrame(-1), m_ham(false),
-        m_image(), m_palette(), m_cycled_palette(), m_cycles() {}
+        m_imageCount(0), m_currentFrame(-1), m_renderer() {}
 
     ~ILBMHandler();
 
