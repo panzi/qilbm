@@ -117,8 +117,10 @@ private:
 
 public:
     enum {
-        HAM = 0x800, // hold and modify
-        EHB = 0x80,  // extra half bright
+        LACE  =    0x4,
+        EHB   =   0x80, // extra half bright
+        HAM   =  0x800, // hold and modify
+        HIRES = 0x8000,
     };
 
     static const uint32_t SIZE = 4;
@@ -185,13 +187,52 @@ public:
     void print(std::FILE* file) const;
 };
 
+class DYCP {
+private:
+    // TODO: find out what those mean
+    // All references that I find say it should be "3 longwords",
+    // but its 8 bytes in the files I can find and nowhere I can find
+    // what the values mean.
+    // See:
+    // * https://wiki.amigaos.net/wiki/ILBM_IFF_Interleaved_Bitmap#ILBM.CTBL.DYCP
+    // * http://amigadev.elowar.com/read/ADCD_2.1/Devices_Manual_guide/node027A.html
+    uint32_t m_value1;
+    uint32_t m_value2;
+
+public:
+    static const uint32_t SIZE = 8;
+
+    DYCP() :
+        m_value1(0), m_value2(0) {}
+
+    inline uint32_t value1() const { return m_value1; }
+    inline uint32_t value2() const { return m_value2; }
+
+    Result read(MemoryReader& reader);
+};
+
+class CTBL {
+private:
+    std::vector<Palette16> m_palettes;
+
+public:
+    CTBL() : m_palettes{} {}
+
+    inline const std::vector<Palette16>& palettes() const { return m_palettes; }
+    inline std::vector<Palette16>& palettes() { return m_palettes; }
+
+    Result read(MemoryReader& reader);
+};
+
 class ILBM {
 private:
     FileType m_file_type;
     BMHD m_header;
     std::optional<CAMG> m_camg;
+    std::optional<DYCP> m_dycp;
     std::unique_ptr<BODY> m_body;
     std::unique_ptr<CMAP> m_cmap;
+    std::unique_ptr<CTBL> m_ctbl;
     std::vector<CRNG> m_crngs;
     std::vector<CCRT> m_ccrts;
 
@@ -202,16 +243,20 @@ public:
         m_file_type{FileType_ILBM},
         m_header{},
         m_camg{},
+        m_dycp{},
         m_body{},
         m_cmap{},
+        m_ctbl{},
         m_crngs{},
         m_ccrts{} {}
 
     inline FileType file_type() const { return m_file_type; }
     inline const BMHD& header() const { return m_header; }
-    inline const std::optional<CAMG>& camg() const { return m_camg; }
+    inline const CAMG* camg() const { return m_camg ? &*m_camg : nullptr; }
+    inline const DYCP* dycp() const { return m_dycp ? &*m_dycp : nullptr; }
     inline const BODY* body() const { return m_body.get(); }
     inline const CMAP* cmap() const { return m_cmap.get(); }
+    inline const CTBL* ctbl() const { return m_ctbl.get(); }
     inline const std::vector<CRNG>& crngs() const { return m_crngs; }
     inline const std::vector<CCRT>& ccrts() const { return m_ccrts; }
 

@@ -35,10 +35,14 @@ public:
     }
 
     inline const uint8_t *data() const { return m_data; }
+    inline const uint8_t *begin() const { return m_data; }
+    inline const uint8_t *end() const { return m_data + m_size; }
+    inline const uint8_t *current() const { return m_data + m_offset; }
     inline size_t size() const { return m_size; }
     inline size_t remaining() const { return m_size - m_offset; }
     inline size_t offset() const { return m_offset; }
     inline bool is_empty() const { return m_offset >= m_size; }
+
     inline void seek_relative(ssize_t amount) {
         if (amount < 0) {
             if ((size_t)-amount > m_offset) {

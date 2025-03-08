@@ -10,6 +10,8 @@
 
 namespace qilbm {
 
+enum { LBM_CYCLE_RATE_DIVISOR = 280 };
+
 class Cycle {
 private:
     uint8_t m_low;
@@ -28,8 +30,11 @@ public:
 };
 
 class Palette {
-public:
+private:
     std::array<Color, 256> m_data;
+
+public:
+    Palette() : m_data() {}
 
     inline const std::array<Color, 256>& data() const {
         return m_data;
@@ -39,11 +44,11 @@ public:
         return m_data.size();
     }
 
-    inline const Color& operator[](size_t index) const {
+    inline const Color& operator[](uint8_t index) const {
         return m_data[index];
     }
 
-    inline Color& operator[](size_t index) {
+    inline Color& operator[](uint8_t index) {
         return m_data[index];
     }
 
@@ -65,7 +70,34 @@ public:
     void apply_cycles_from(const Palette& palette, const std::vector<Cycle>& cycles, double now, bool blend);
 };
 
-enum { LBM_CYCLE_RATE_DIVISOR = 280 };
+
+class Palette16 {
+private:
+    std::array<Color16, 16> m_data;
+
+public:
+    Palette16() : m_data() {}
+
+    inline const std::array<Color16, 16>& data() const {
+        return m_data;
+    }
+
+    inline size_t size() const {
+        return m_data.size();
+    }
+
+    inline const Color16& operator[](uint8_t index) const {
+        return m_data[index];
+    }
+
+    inline Color16& operator[](uint8_t index) {
+        return m_data[index];
+    }
+
+    inline void clear() {
+        m_data.fill(Color16());
+    }
+};
 
 }
 

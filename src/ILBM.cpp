@@ -135,9 +135,11 @@ Result ILBM::read(MemoryReader& reader) {
 
     m_body = nullptr;
     m_cmap = nullptr;
+    m_ctbl = nullptr;
     m_crngs.clear();
     m_ccrts.clear();
     m_camg = std::nullopt;
+    m_dycp = std::nullopt;
 
     MemoryReader main_chunk_reader { reader, main_chunk_len - 4 };
     while (main_chunk_reader.remaining() > 0) {
@@ -145,6 +147,8 @@ Result ILBM::read(MemoryReader& reader) {
         uint32_t chunk_len = 0;
         IO(main_chunk_reader.read_u32be(chunk_len));
         MemoryReader chunk_reader { main_chunk_reader, chunk_len };
+
+        // std::printf("CHUNK: %c%c%c%c\n", fourcc[0], fourcc[1], fourcc[2], fourcc[3]);
 
         if (std::memcmp(fourcc.data(), "BMHD", 4) == 0) {
             TRY(m_header.read(chunk_reader));
@@ -164,6 +168,13 @@ Result ILBM::read(MemoryReader& reader) {
             CAMG camg;
             TRY(camg.read(chunk_reader));
             m_camg = std::optional { std::move(camg) };
+        } else if (std::memcmp(fourcc.data(), "DYCP", 4) == 0) {
+            DYCP dycp;
+            TRY(dycp.read(chunk_reader));
+            m_dycp = std::optional { std::move(dycp) };
+        } else if (std::memcmp(fourcc.data(), "CTBL", 4) == 0) {
+            m_ctbl = std::make_unique<CTBL>();
+            TRY(m_ctbl->read(chunk_reader));
         } else {
             // ignore unknown chunk
             // TODO: HAM, SHAM, ...
@@ -196,6 +207,17 @@ Result ILBM::read(MemoryReader& reader) {
                 // HAM might access the palette, ensure it exists if HAM is true
                 m_cmap = std::make_unique<CMAP>();
             }
+        }
+    }
+
+    if (m_ctbl) {
+        auto& palettes = m_ctbl->palettes();
+
+        if (palettes.size() < (size_t)m_header.height()) {
+            LOG_DEBUG(
+                "fewer CTBL palettes than rows in image, extending with zeroed palettes: %zu < %u",
+                palettes.size(), m_header.height());
+            palettes.resize(m_header.height());
         }
     }
 
@@ -648,6 +670,37 @@ void BODY::decode_line(const std::vector<uint8_t>& line, uint8_t mask, uint16_t 
     }
 }
 
+Result DYCP::read(MemoryReader& reader) {
+    if (reader.remaining() < DYCP::SIZE) {
+        LOG_DEBUG("truncated DYCP chunk: %zu < %u", reader.remaining(), DYCP::SIZE);
+        return Result_ParsingError;
+    }
+
+    IO(reader.read_u32be(m_value1));
+    IO(reader.read_u32be(m_value2));
+
+    reader.seek_relative(reader.remaining());
+
+    return Result_Ok;
+}
+
+Result CTBL::read(MemoryReader& reader) {
+    size_t palette_count = reader.remaining() / 32;
+    const uint8_t* data = reader.current();
+    m_palettes.clear();
+
+    size_t offset = 0;
+    for (size_t palette_index = 0; palette_index < palette_count; ++ palette_index) {
+        auto& palette = m_palettes.emplace_back();
+        for (uint_fast8_t color_index = 0; color_index < 16; ++ color_index) {
+            palette[color_index].assign(data[offset + 1], data[offset + 2], data[offset + 3]);
+            offset += 4;
+        }
+    }
+
+    return Result_Ok;
+}
+
 void ILBM::get_cycles(std::vector<Cycle>& cycles) const {
     for (auto& crng : this->crngs()) {
         auto low = crng.low();
@@ -721,7 +774,7 @@ Result Renderer::read(MemoryReader& reader) {
     m_palette = m_image.palette();
 
     auto num_planes = m_image.header().num_planes();
-    const auto& camg = m_image.camg();
+    const auto* camg = m_image.camg();
     m_ham = camg && (camg->viewport_mode() & CAMG::HAM) && (num_planes >= 6 && num_planes <= 8);
 
     return result;
@@ -804,7 +857,7 @@ void Renderer::render(uint8_t* pixels, size_t pitch, double now, bool blend) {
                     switch (mode) {
                         case 0:
                         {
-                            auto& color = m_cycled_palette[color_index];
+                            auto color = m_cycled_palette[color_index];
                             r = color.r();
                             g = color.g();
                             b = color.b();
@@ -842,6 +895,104 @@ void Renderer::render(uint8_t* pixels, size_t pitch, double now, bool blend) {
                 }
                 out_line_index += pitch;
             }
+        } else if (const auto* ctbl = m_image.ctbl()) {
+            // XXX: does NOT work
+            // TODO: check num_planes <= 4
+            const auto& palettes = ctbl->palettes();
+            size_t out_line_index = 0;
+            size_t ilbm_index = 0;
+
+            // TODO: if SHAM+LACED only change palette ever other line
+            // const auto* camg = m_image.camg();
+            // auto viewport_mode = camg ? camg->viewport_mode() : 0;
+            // bool laced = viewport_mode & CAMB::LACED;
+
+            for (auto y = 0; y < height; ++ y) {
+                size_t out_index = out_line_index;
+                const auto& palette = palettes[y];
+
+                for (auto x = 0; x < width; ++ x) {
+                    auto index = data[ilbm_index];
+                    auto color = palette[index];
+    
+                    pixels[out_index]     = color.r() * 17;
+                    pixels[out_index + 1] = color.g() * 17;
+                    pixels[out_index + 2] = color.b() * 17;
+
+                    ++ ilbm_index;
+                    out_index += pixel_len;
+                }
+                out_line_index += pitch;
+            }
+#if 0
+        } else if (const auto* ctbl = m_image.ctbl()) {
+            // XXX: no idea how to process that
+            // TODO: check num_planes == 4
+            const auto& palettes = ctbl->palettes();
+
+            const uint8_t payload_bits = num_planes - 2;
+            const uint8_t ham_shift = 8 - payload_bits;
+            const uint8_t ham_mask = (1 << ham_shift) - 1;
+            const uint8_t payload_mask = 0xFF >> ham_shift;
+
+            size_t ilbm_index = 0;
+            size_t out_line_index = 0;
+
+            for (auto y = 0; y < height; ++ y) {
+                size_t out_index = out_line_index;
+                const auto& palette = palettes[y];
+                uint8_t r = 0;
+                uint8_t g = 0;
+                uint8_t b = 0;
+
+                for (auto x = 0; x < width; ++ x) {
+                    uint8_t code = data[ilbm_index];
+                    uint8_t mode = code >> payload_bits;
+                    uint8_t color_index = code & payload_mask;
+
+                    switch (mode) {
+                        case 0:
+                        {
+                            //auto color = m_cycled_palette[color_index];
+                            auto color16 = palette[color_index];
+                            r = color16.r() * 17;
+                            g = color16.g() * 17;
+                            b = color16.b() * 17;
+                            break;
+                        }
+                        case 1:
+                        {
+                            // blue
+                            b = (color_index << ham_shift) | (b & ham_mask);
+                            break;
+                        }
+                        case 2:
+                        {
+                            // red
+                            r = (color_index << ham_shift) | (r & ham_mask);
+                            break;
+                        }
+                        case 3:
+                        {
+                            // green
+                            g = (color_index << ham_shift) | (g & ham_mask);
+                            break;
+                        }
+                        default:
+                            // not possible
+                            break;
+                    }
+
+                    pixels[out_index] = r;
+                    pixels[out_index + 1] = g;
+                    pixels[out_index + 2] = b;
+
+                    out_index += pixel_len;
+                    ++ ilbm_index;
+                }
+                out_line_index += pitch;
+            }
+#endif
         } else {
             size_t out_line_index = 0;
             size_t ilbm_index = 0;
@@ -861,7 +1012,6 @@ void Renderer::render(uint8_t* pixels, size_t pitch, double now, bool blend) {
                 out_line_index += pitch;
             }
         }
-
     } else if (num_planes < 8) {
         // XXX: No idea if colors here should be done like in HAM? Need example files.
         // const uint8_t color_shift = 8 - num_planes;
