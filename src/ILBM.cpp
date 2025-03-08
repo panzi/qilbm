@@ -5,6 +5,7 @@
 #include <cassert>
 
 #define GET_UINT16(BUF, INDEX) (((uint16_t)((BUF)[(INDEX)]) << 8) | (uint16_t)((BUF)[(INDEX) + 1]))
+#define EXTEND_4_TO_8_BIT(X) ((X) * 17)
 
 // generated with make_lookup_tables.py
 static const uint8_t COLOR_LOOKUP_TABLE_1BIT[] = { 0, 255 };
@@ -693,8 +694,10 @@ Result CTBL::read(MemoryReader& reader) {
     for (size_t palette_index = 0; palette_index < palette_count; ++ palette_index) {
         auto& palette = m_palettes.emplace_back();
         for (uint_fast8_t color_index = 0; color_index < 16; ++ color_index) {
-            palette[color_index].assign(data[offset + 1], data[offset + 2], data[offset + 3]);
-            offset += 4;
+            uint8_t v1 = data[offset];
+            uint8_t v2 = data[offset + 1];
+            palette[color_index].assign(v1 & 0xF, (v2 >> 4), v2 & 0xF);
+            offset += 2;
         }
     }
 
@@ -793,6 +796,7 @@ void Renderer::render(uint8_t* pixels, size_t pitch, double now, bool blend) {
     const bool is_masked = header.mask() == 1;
 
     const uint8_t* ilbm_pixels = data.data();
+    const auto* ctbl = m_image.ctbl();
 
     if (num_planes == 24) {
         if (is_masked) {
@@ -825,6 +829,35 @@ void Renderer::render(uint8_t* pixels, size_t pitch, double now, bool blend) {
             std::memcpy(pixels + out_index, ilbm_pixels + ilbm_index, ilbm_line_len);
             out_index += pitch;
             ilbm_index += ilbm_line_len;
+        }
+    } else if (ctbl && num_planes <= 4) {
+        const auto& palettes = ctbl->palettes();
+        size_t out_line_index = 0;
+        size_t ilbm_index = 0;
+        size_t pixel_len = 3 + is_masked;
+
+        // TODO: Can CTBL with HAM and/or color palette cycling exist?
+        // TODO: If SHAM+LACED only change palette ever other line.
+        // const auto* camg = m_image.camg();
+        // auto viewport_mode = camg ? camg->viewport_mode() : 0;
+        // bool laced = viewport_mode & CAMB::LACED;
+
+        for (auto y = 0; y < height; ++ y) {
+            size_t out_index = out_line_index;
+            const auto& palette = palettes[y];
+
+            for (auto x = 0; x < width; ++ x) {
+                auto index = data[ilbm_index];
+                auto color = palette[index];
+
+                pixels[out_index]     = EXTEND_4_TO_8_BIT(color.r());
+                pixels[out_index + 1] = EXTEND_4_TO_8_BIT(color.g());
+                pixels[out_index + 2] = EXTEND_4_TO_8_BIT(color.b());
+
+                ++ ilbm_index;
+                out_index += pixel_len;
+            }
+            out_line_index += pitch;
         }
     } else if (m_palette) {
         m_cycled_palette.apply_cycles_from(*m_palette, m_cycles, now, blend);
@@ -895,104 +928,6 @@ void Renderer::render(uint8_t* pixels, size_t pitch, double now, bool blend) {
                 }
                 out_line_index += pitch;
             }
-        } else if (const auto* ctbl = m_image.ctbl()) {
-            // XXX: does NOT work
-            // TODO: check num_planes <= 4
-            const auto& palettes = ctbl->palettes();
-            size_t out_line_index = 0;
-            size_t ilbm_index = 0;
-
-            // TODO: if SHAM+LACED only change palette ever other line
-            // const auto* camg = m_image.camg();
-            // auto viewport_mode = camg ? camg->viewport_mode() : 0;
-            // bool laced = viewport_mode & CAMB::LACED;
-
-            for (auto y = 0; y < height; ++ y) {
-                size_t out_index = out_line_index;
-                const auto& palette = palettes[y];
-
-                for (auto x = 0; x < width; ++ x) {
-                    auto index = data[ilbm_index];
-                    auto color = palette[index];
-    
-                    pixels[out_index]     = color.r() * 17;
-                    pixels[out_index + 1] = color.g() * 17;
-                    pixels[out_index + 2] = color.b() * 17;
-
-                    ++ ilbm_index;
-                    out_index += pixel_len;
-                }
-                out_line_index += pitch;
-            }
-#if 0
-        } else if (const auto* ctbl = m_image.ctbl()) {
-            // XXX: no idea how to process that
-            // TODO: check num_planes == 4
-            const auto& palettes = ctbl->palettes();
-
-            const uint8_t payload_bits = num_planes - 2;
-            const uint8_t ham_shift = 8 - payload_bits;
-            const uint8_t ham_mask = (1 << ham_shift) - 1;
-            const uint8_t payload_mask = 0xFF >> ham_shift;
-
-            size_t ilbm_index = 0;
-            size_t out_line_index = 0;
-
-            for (auto y = 0; y < height; ++ y) {
-                size_t out_index = out_line_index;
-                const auto& palette = palettes[y];
-                uint8_t r = 0;
-                uint8_t g = 0;
-                uint8_t b = 0;
-
-                for (auto x = 0; x < width; ++ x) {
-                    uint8_t code = data[ilbm_index];
-                    uint8_t mode = code >> payload_bits;
-                    uint8_t color_index = code & payload_mask;
-
-                    switch (mode) {
-                        case 0:
-                        {
-                            //auto color = m_cycled_palette[color_index];
-                            auto color16 = palette[color_index];
-                            r = color16.r() * 17;
-                            g = color16.g() * 17;
-                            b = color16.b() * 17;
-                            break;
-                        }
-                        case 1:
-                        {
-                            // blue
-                            b = (color_index << ham_shift) | (b & ham_mask);
-                            break;
-                        }
-                        case 2:
-                        {
-                            // red
-                            r = (color_index << ham_shift) | (r & ham_mask);
-                            break;
-                        }
-                        case 3:
-                        {
-                            // green
-                            g = (color_index << ham_shift) | (g & ham_mask);
-                            break;
-                        }
-                        default:
-                            // not possible
-                            break;
-                    }
-
-                    pixels[out_index] = r;
-                    pixels[out_index + 1] = g;
-                    pixels[out_index + 2] = b;
-
-                    out_index += pixel_len;
-                    ++ ilbm_index;
-                }
-                out_line_index += pitch;
-            }
-#endif
         } else {
             size_t out_line_index = 0;
             size_t ilbm_index = 0;
