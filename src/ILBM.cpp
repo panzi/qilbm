@@ -141,6 +141,10 @@ Result ILBM::read(MemoryReader& reader) {
     m_ccrts.clear();
     m_camg = std::nullopt;
     m_dycp = std::nullopt;
+    m_name = std::nullopt;
+    m_auth = std::nullopt;
+    m_anno = std::nullopt;
+    m_copy = std::nullopt;
 
     MemoryReader main_chunk_reader { reader, main_chunk_len - 4 };
     while (main_chunk_reader.remaining() > 0) {
@@ -166,16 +170,30 @@ Result ILBM::read(MemoryReader& reader) {
             CCRT& ccrt = m_ccrts.emplace_back();
             TRY(ccrt.read(chunk_reader));
         } else if (std::memcmp(fourcc.data(), "CAMG", 4) == 0) {
-            CAMG camg;
+            CAMG& camg = m_camg.emplace();
             TRY(camg.read(chunk_reader));
-            m_camg = std::optional { std::move(camg) };
         } else if (std::memcmp(fourcc.data(), "DYCP", 4) == 0) {
-            DYCP dycp;
+            DYCP& dycp = m_dycp.emplace();
             TRY(dycp.read(chunk_reader));
-            m_dycp = std::optional { std::move(dycp) };
         } else if (std::memcmp(fourcc.data(), "CTBL", 4) == 0) {
             m_ctbl = std::make_unique<CTBL>();
             TRY(m_ctbl->read(chunk_reader));
+        } else if (std::memcmp(fourcc.data(), "NAME", 4) == 0) {
+            NAME& name = m_name.emplace();
+            TRY(name.read(chunk_reader));
+            LOG_DEBUG("NAME: \"%s\"", name.content().c_str());
+        } else if (std::memcmp(fourcc.data(), "AUTH", 4) == 0) {
+            AUTH& auth = m_auth.emplace();
+            TRY(auth.read(chunk_reader));
+            LOG_DEBUG("AUTH: \"%s\"", auth.content().c_str());
+        } else if (std::memcmp(fourcc.data(), "ANNO", 4) == 0) {
+            ANNO& anno = m_anno.emplace();
+            TRY(anno.read(chunk_reader));
+            LOG_DEBUG("ANNO: \"%s\"", anno.content().c_str());
+        } else if (std::memcmp(fourcc.data(), "(c) ", 4) == 0) {
+            Copy& copy = m_copy.emplace();
+            TRY(copy.read(chunk_reader));
+            LOG_DEBUG("(c) : \"%s\"", copy.content().c_str());
         } else {
             // ignore unknown chunk
             // TODO: HAM, SHAM, ...
@@ -1048,4 +1066,10 @@ void Renderer::render(uint8_t* pixels, size_t pitch, double now, bool blend) {
             out_line_index += pitch;
         }
     }
+}
+
+Result TextChunk::read(MemoryReader& reader) {
+    m_content.assign((const char*)reader.current(), reader.remaining());
+
+    return Result_Ok;
 }

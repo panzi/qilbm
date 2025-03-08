@@ -8,6 +8,7 @@
 #include <stdint.h>
 #include <cmath>
 #include <cstdio>
+#include <string>
 
 #include "MemoryReader.h"
 #include "Color.h"
@@ -241,10 +242,53 @@ public:
     Result read(MemoryReader& reader);
 };
 
+class TextChunk {
+private:
+    std::string m_content;
+
+public:
+    inline TextChunk() : m_content{} {};
+    inline TextChunk(const std::string& content) : m_content(content) {}
+    inline TextChunk(const char* content) : m_content(content) {}
+    inline TextChunk(const char* content, size_t size) : m_content(content, size) {}
+    inline TextChunk(const TextChunk&) = default;
+    inline TextChunk(TextChunk&&) = default;
+
+    inline const std::string& content() const { return m_content; }
+    inline std::string& content() { return m_content; }
+
+    inline void set_content(const std::string& content) {
+        m_content = content;
+    }
+
+    inline void set_content(std::string&& content) {
+        m_content = content;
+    }
+
+    inline void set_content(const char* content) {
+        m_content = content;
+    }
+
+    inline void set_content(const char* content, size_t size) {
+        m_content.assign(content, size);
+    }
+
+    Result read(MemoryReader& reader);
+};
+
+class ANNO : public TextChunk {};
+class NAME : public TextChunk {};
+class AUTH : public TextChunk {};
+class Copy : public TextChunk {};
+
 class ILBM {
 private:
     FileType m_file_type;
     BMHD m_bmhd;
+    std::optional<NAME> m_name;
+    std::optional<AUTH> m_auth;
+    std::optional<ANNO> m_anno;
+    std::optional<Copy> m_copy;
     std::optional<CAMG> m_camg;
     std::optional<DYCP> m_dycp;
     std::unique_ptr<BODY> m_body;
@@ -259,6 +303,10 @@ public:
     ILBM() :
         m_file_type{FileType_ILBM},
         m_bmhd{},
+        m_name{},
+        m_auth{},
+        m_anno{},
+        m_copy{},
         m_camg{},
         m_dycp{},
         m_body{},
@@ -269,6 +317,10 @@ public:
 
     inline FileType file_type() const { return m_file_type; }
     inline const BMHD& bmhd() const { return m_bmhd; }
+    inline const NAME* name() const { return m_name ? &*m_name : nullptr; }
+    inline const AUTH* auth() const { return m_auth ? &*m_auth : nullptr; }
+    inline const ANNO* anno() const { return m_anno ? &*m_anno : nullptr; }
+    inline const Copy* copy() const { return m_copy ? &*m_copy : nullptr; }
     inline const CAMG* camg() const { return m_camg ? &*m_camg : nullptr; }
     inline const DYCP* dycp() const { return m_dycp ? &*m_dycp : nullptr; }
     inline const BODY* body() const { return m_body.get(); }
@@ -278,6 +330,10 @@ public:
     inline const std::vector<CCRT>& ccrts() const { return m_ccrts; }
 
     inline BMHD& bmhd() { return m_bmhd; }
+    inline NAME* name() { return m_name ? &*m_name : nullptr; }
+    inline AUTH* auth() { return m_auth ? &*m_auth : nullptr; }
+    inline ANNO* anno() { return m_anno ? &*m_anno : nullptr; }
+    inline Copy* copy() { return m_copy ? &*m_copy : nullptr; }
     inline CAMG* camg() { return m_camg ? &*m_camg : nullptr; }
     inline DYCP* dycp() { return m_dycp ? &*m_dycp : nullptr; }
     inline BODY* body() { return m_body.get(); }
@@ -290,10 +346,22 @@ public:
         m_bmhd = bmhd;
     }
 
+    inline NAME& make_name() { return m_name.emplace(); }
+    inline AUTH& make_auth() { return m_auth.emplace(); }
+    inline ANNO& make_anno() { return m_anno.emplace(); }
+    inline Copy& make_copy() { return m_copy.emplace(); }
+
+    inline void clear_name() { m_name = std::nullopt; }
+    inline void clear_auth() { m_auth = std::nullopt; }
+    inline void clear_anno() { m_anno = std::nullopt; }
+    inline void clear_copy() { m_copy = std::nullopt; }
+
     inline BODY& make_body() {
         m_body = std::make_unique<BODY>();
         return *m_body;
     }
+
+    inline void clear_body() { m_body = nullptr; }
 
     Result read(MemoryReader& reader);
 

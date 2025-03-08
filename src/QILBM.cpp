@@ -209,7 +209,7 @@ QVariant ILBMHandler::option(ImageOption option) const {
     switch (option) {
         case ImageOption::Size:
         {
-            auto& header = m_renderer.image().bmhd();
+            const auto& header = m_renderer.image().bmhd();
             return QSize(header.width(), header.height());
         }
         case ImageOption::Animation:
@@ -218,6 +218,47 @@ QVariant ILBMHandler::option(ImageOption option) const {
         case ImageOption::ImageFormat:
             return qImageFormat(m_renderer.image().bmhd());
 
+        case ImageOption::Name:
+        {
+            const auto* name = m_renderer.image().name();
+            if (name == nullptr) {
+                return QVariant();
+            }
+            return QString::fromLatin1(name->content());
+        }
+        case ImageOption::Description:
+        {
+            const auto& image = m_renderer.image();
+            const auto* auth = image.auth();
+            const auto* copy = image.copy();
+            const auto* anno = image.anno();
+
+            if (!auth && !anno && !copy) {
+                return QVariant();
+            }
+
+            QString value;
+
+            if (auth) {
+                value.append(QLatin1StringView(auth->content()));
+            }
+
+            if (copy) {
+                if (!value.isEmpty()) {
+                    value.append(QChar::fromLatin1('\n'));
+                }
+                value.append(QLatin1StringView(copy->content()));
+            }
+
+            if (anno) {
+                if (!value.isEmpty()) {
+                    value.append(QChar::fromLatin1('\n'));
+                }
+                value.append(QLatin1StringView(anno->content()));
+            }
+
+            return value;
+        }
         default:
             return QVariant();
     }
@@ -228,6 +269,8 @@ bool ILBMHandler::supportsOption(ImageOption option) const {
         case ImageOption::Size:
         case ImageOption::Animation:
         case ImageOption::ImageFormat:
+        case ImageOption::Name:
+        case ImageOption::Description:
             return true;
 
         default:
