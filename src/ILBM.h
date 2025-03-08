@@ -78,6 +78,20 @@ public:
     inline int16_t page_width() const { return m_page_width; }
     inline int16_t page_height() const { return m_page_height; }
 
+    inline void set_width(uint16_t width) { m_width = width; }
+    inline void set_height(uint16_t height) { m_height = height; }
+    inline void set_x_origin(int16_t x_origin) { m_x_origin = x_origin; }
+    inline void set_y_origin(int16_t y_origin) { m_y_origin = y_origin; }
+    inline void set_num_planes(uint8_t num_planes) { m_num_planes = num_planes; }
+    inline void set_mask(uint8_t mask) { m_mask = mask; }
+    inline void set_compression(uint8_t compression) { m_compression = compression; }
+    inline void set_flags(uint8_t flags) { m_flags = flags; }
+    inline void set_trans_color(uint16_t trans_color) { m_trans_color = trans_color; }
+    inline void set_x_aspect(uint8_t x_aspect) { m_x_aspect = x_aspect; }
+    inline void set_y_aspect(uint8_t y_aspect) { m_y_aspect = y_aspect; }
+    inline void set_page_width(int16_t page_width) { m_page_width = page_width; }
+    inline void set_page_height(int16_t page_height) { m_page_height = page_height; }
+
     Result read(MemoryReader& reader);
 };
 
@@ -91,6 +105,9 @@ public:
 
     inline const std::vector<uint8_t>& data() const { return m_data; }
     inline const std::vector<bool>& mask() const { return m_mask; }
+
+    inline std::vector<uint8_t>& data() { return m_data; }
+    inline std::vector<bool>& mask() { return m_mask; }
 
     Result read(MemoryReader& reader, FileType file_type, const BMHD& bmhd);
 
@@ -227,7 +244,7 @@ public:
 class ILBM {
 private:
     FileType m_file_type;
-    BMHD m_header;
+    BMHD m_bmhd;
     std::optional<CAMG> m_camg;
     std::optional<DYCP> m_dycp;
     std::unique_ptr<BODY> m_body;
@@ -241,7 +258,7 @@ public:
 
     ILBM() :
         m_file_type{FileType_ILBM},
-        m_header{},
+        m_bmhd{},
         m_camg{},
         m_dycp{},
         m_body{},
@@ -251,7 +268,7 @@ public:
         m_ccrts{} {}
 
     inline FileType file_type() const { return m_file_type; }
-    inline const BMHD& header() const { return m_header; }
+    inline const BMHD& bmhd() const { return m_bmhd; }
     inline const CAMG* camg() const { return m_camg ? &*m_camg : nullptr; }
     inline const DYCP* dycp() const { return m_dycp ? &*m_dycp : nullptr; }
     inline const BODY* body() const { return m_body.get(); }
@@ -259,6 +276,24 @@ public:
     inline const CTBL* ctbl() const { return m_ctbl.get(); }
     inline const std::vector<CRNG>& crngs() const { return m_crngs; }
     inline const std::vector<CCRT>& ccrts() const { return m_ccrts; }
+
+    inline BMHD& bmhd() { return m_bmhd; }
+    inline CAMG* camg() { return m_camg ? &*m_camg : nullptr; }
+    inline DYCP* dycp() { return m_dycp ? &*m_dycp : nullptr; }
+    inline BODY* body() { return m_body.get(); }
+    inline CMAP* cmap() { return m_cmap.get(); }
+    inline CTBL* ctbl() { return m_ctbl.get(); }
+    inline std::vector<CRNG>& crngs() { return m_crngs; }
+    inline std::vector<CCRT>& ccrts() { return m_ccrts; }
+
+    inline void set_bmhd(BMHD bmhd) {
+        m_bmhd = bmhd;
+    }
+
+    inline BODY& make_body() {
+        m_body = std::make_unique<BODY>();
+        return *m_body;
+    }
 
     Result read(MemoryReader& reader);
 

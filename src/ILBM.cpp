@@ -152,10 +152,10 @@ Result ILBM::read(MemoryReader& reader) {
         // std::printf("CHUNK: %c%c%c%c\n", fourcc[0], fourcc[1], fourcc[2], fourcc[3]);
 
         if (std::memcmp(fourcc.data(), "BMHD", 4) == 0) {
-            TRY(m_header.read(chunk_reader));
+            TRY(m_bmhd.read(chunk_reader));
         } else if (std::memcmp(fourcc.data(), "BODY", 4) == 0) {
             m_body = std::make_unique<BODY>();
-            TRY(m_body->read(chunk_reader, m_file_type, m_header));
+            TRY(m_body->read(chunk_reader, m_file_type, m_bmhd));
         } else if (std::memcmp(fourcc.data(), "CMAP", 4) == 0) {
             m_cmap = std::make_unique<CMAP>();
             TRY(m_cmap->read(chunk_reader));
@@ -214,11 +214,11 @@ Result ILBM::read(MemoryReader& reader) {
     if (m_ctbl) {
         auto& palettes = m_ctbl->palettes();
 
-        if (palettes.size() < (size_t)m_header.height()) {
+        if (palettes.size() < (size_t)m_bmhd.height()) {
             LOG_DEBUG(
                 "fewer CTBL palettes than rows in image, extending with zeroed palettes: %zu < %u",
-                palettes.size(), m_header.height());
-            palettes.resize(m_header.height());
+                palettes.size(), m_bmhd.height());
+            palettes.resize(m_bmhd.height());
         }
     }
 
@@ -776,15 +776,60 @@ Result Renderer::read(MemoryReader& reader) {
     m_image.get_cycles(m_cycles);
     m_palette = m_image.palette();
 
-    auto num_planes = m_image.header().num_planes();
+    auto num_planes = m_image.bmhd().num_planes();
     const auto* camg = m_image.camg();
     m_ham = camg && (camg->viewport_mode() & CAMG::HAM) && (num_planes >= 6 && num_planes <= 8);
+
+    if (!m_image.body() && m_palette) {
+        // No image, only a palette: It's a palette file, so draw that palette.
+        auto& body = m_image.make_body();
+        auto& bmhd = m_image.bmhd();
+
+        const uint16_t margin = 1;
+        const uint16_t inner_square_size = 4;
+        const uint16_t outer_square_size = inner_square_size + margin;
+
+        const uint16_t width  = outer_square_size * 16 + margin;
+        const uint16_t height = outer_square_size * 16 + margin;
+
+        bmhd.set_compression(0);
+        bmhd.set_mask(0);
+        bmhd.set_num_planes(8);
+        bmhd.set_x_aspect(1);
+        bmhd.set_y_aspect(1);
+        bmhd.set_x_origin(0);
+        bmhd.set_y_origin(0);
+        bmhd.set_width(width);
+        bmhd.set_height(height);
+        bmhd.set_page_width(width);
+        bmhd.set_page_height(height);
+        bmhd.set_trans_color(255);
+
+        auto& pixels = body.data();
+        pixels.resize((size_t)width * (size_t)height, 255);
+
+        for (uint_fast16_t index = 0; index < 256; ++ index) {
+            const uint_fast16_t row = index / 16;
+            const uint_fast16_t col = index % 16;
+            const size_t x1 = (size_t)col * outer_square_size + margin;
+            const size_t y1 = (size_t)row * outer_square_size + margin;
+            const size_t x2 = x1 + inner_square_size;
+            const size_t y2 = y1 + inner_square_size;
+
+            for (size_t y = y1; y < y2; ++ y) {
+                size_t offset = y * (size_t)width;
+                for (size_t x = x1; x < x2; ++ x) {
+                    pixels[offset + x] = index;
+                }
+            }
+        }
+    }
 
     return result;
 }
 
 void Renderer::render(uint8_t* pixels, size_t pitch, double now, bool blend) {
-    const auto& header = m_image.header();
+    const auto& header = m_image.bmhd();
     const auto width = header.width();
     const auto height = header.height();
 

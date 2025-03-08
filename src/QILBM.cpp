@@ -160,7 +160,7 @@ bool ILBMHandler::read() {
 }
 
 QRect ILBMHandler::currentImageRect() const {
-    auto& header = m_renderer.image().header();
+    auto& header = m_renderer.image().bmhd();
     return QRect(0, 0, header.width(), header.height());
 }
 
@@ -209,14 +209,14 @@ QVariant ILBMHandler::option(ImageOption option) const {
     switch (option) {
         case ImageOption::Size:
         {
-            auto& header = m_renderer.image().header();
+            auto& header = m_renderer.image().bmhd();
             return QSize(header.width(), header.height());
         }
         case ImageOption::Animation:
             return m_renderer.is_animated();
 
         case ImageOption::ImageFormat:
-            return qImageFormat(m_renderer.image().header());
+            return qImageFormat(m_renderer.image().bmhd());
 
         default:
             return QVariant();
@@ -259,7 +259,7 @@ bool ILBMHandler::read(QImage *image) {
         return false;
     }
 
-    const auto& header = m_renderer.image().header();
+    const auto& header = m_renderer.image().bmhd();
     const auto width = header.width();
     const auto height = header.height();
     const auto format = qImageFormat(header);
