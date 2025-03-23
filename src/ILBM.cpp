@@ -378,6 +378,10 @@ Result BODY::read(MemoryReader& reader, FileType file_type, const BMHD& header) 
 
         case 1:
             // compressed
+            if (file_type == FileType_PBM) {
+                // XXX: why only here and not also in uncompressed?
+                line_len = width;
+            }
             for (uint_fast16_t y = 0; y < header.height(); ++ y) {
                 size_t pos = 0;
                 uint8_t cmd = 0;
