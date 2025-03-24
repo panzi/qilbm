@@ -178,6 +178,9 @@ Result ILBM::read(MemoryReader& reader) {
         } else if (std::memcmp(fourcc.data(), "CTBL", 4) == 0) {
             m_ctbl = std::make_unique<CTBL>();
             TRY(m_ctbl->read(chunk_reader));
+        } else if (std::memcmp(fourcc.data(), "SHAM", 4) == 0) {
+            m_sham = std::make_unique<SHAM>();
+            TRY(m_sham->read(chunk_reader));
         } else if (std::memcmp(fourcc.data(), "NAME", 4) == 0) {
             NAME& name = m_name.emplace();
             TRY(name.read(chunk_reader));
@@ -203,6 +206,7 @@ Result ILBM::read(MemoryReader& reader) {
         main_chunk_reader.seek_relative(chunk_len);
     }
 
+    bool laced = false;
     if (m_camg) {
         auto viewport_mode = m_camg->viewport_mode();
         if (viewport_mode & CAMG::EHB) {
@@ -227,16 +231,64 @@ Result ILBM::read(MemoryReader& reader) {
                 m_cmap = std::make_unique<CMAP>();
             }
         }
+
+        if (viewport_mode & CAMG::LACE) {
+            laced = true;
+        }
     }
 
-    if (m_ctbl) {
-        auto& palettes = m_ctbl->palettes();
+    if (m_ctbl || m_sham) {
+        auto palette = this->palette();
 
-        if (palettes.size() < (size_t)m_bmhd.height()) {
-            LOG_DEBUG(
-                "fewer CTBL palettes than rows in image, extending with zeroed palettes: %zu < %u",
-                palettes.size(), m_bmhd.height());
-            palettes.resize(m_bmhd.height());
+        if (m_ctbl) {
+            auto& palettes = m_ctbl->palettes();
+
+            if (palette) {
+                const auto palette_begin = palette->data().begin() + 16;
+                const auto palette_end = palette->data().end();
+                for (auto& pal : palettes) {
+                    std::copy(palette_begin, palette_end, pal.data().begin() + 16);
+                }
+            }
+
+            if (palettes.size() < (size_t)m_bmhd.height()) {
+                LOG_DEBUG(
+                    "fewer CTBL palettes than rows in image, extending with zeroed palettes: %zu < %u",
+                    palettes.size(), m_bmhd.height());
+
+                if (palette) {
+                    palettes.resize((size_t)m_bmhd.height(), *palette);
+                } else {
+                    palettes.resize((size_t)m_bmhd.height());
+                }
+            }
+        }
+
+        if (m_sham) {
+            auto& palettes = m_sham->palettes();
+
+            if (palette) {
+                const auto palette_begin = palette->data().begin() + 16;
+                const auto palette_end = palette->data().end();
+                for (auto& pal : palettes) {
+                    std::copy(palette_begin, palette_end, pal.data().begin() + 16);
+                }
+            }
+
+            size_t height = m_bmhd.height();
+            size_t palette_count = laced ? (height + 1) / 2 : height;
+
+            if (palettes.size() < palette_count) {
+                LOG_DEBUG(
+                    "fewer SHAM palettes than expected, extending with zeroed palettes: %zu < %zu",
+                    palettes.size(), palette_count);
+
+                if (palette) {
+                    palettes.resize(palette_count, *palette);
+                } else {
+                    palettes.resize(palette_count);
+                }
+            }
         }
     }
 
@@ -718,7 +770,44 @@ Result CTBL::read(MemoryReader& reader) {
         for (uint_fast8_t color_index = 0; color_index < 16; ++ color_index) {
             uint8_t v1 = data[offset];
             uint8_t v2 = data[offset + 1];
-            palette[color_index].assign(v1 & 0xF, (v2 >> 4), v2 & 0xF);
+            uint8_t r = v1 & 0xF;
+            uint8_t g = v2 >> 4;
+            uint8_t b = v2 & 0xF;
+
+            palette[color_index].assign(
+                EXTEND_4_TO_8_BIT(r),
+                EXTEND_4_TO_8_BIT(g),
+                EXTEND_4_TO_8_BIT(b)
+            );
+            offset += 2;
+        }
+    }
+
+    return Result_Ok;
+}
+
+Result SHAM::read(MemoryReader& reader) {
+    IO(reader.read_u16be(m_version));
+
+    size_t palette_count = reader.remaining() / 32;
+    const uint8_t* data = reader.current();
+    m_palettes.clear();
+
+    size_t offset = 0;
+    for (size_t palette_index = 0; palette_index < palette_count; ++ palette_index) {
+        auto& palette = m_palettes.emplace_back();
+        for (uint_fast8_t color_index = 0; color_index < 16; ++ color_index) {
+            uint8_t v1 = data[offset];
+            uint8_t v2 = data[offset + 1];
+            uint8_t r = v1 & 0xF;
+            uint8_t g = v2 >> 4;
+            uint8_t b = v2 & 0xF;
+
+            palette[color_index].assign(
+                EXTEND_4_TO_8_BIT(r),
+                EXTEND_4_TO_8_BIT(g),
+                EXTEND_4_TO_8_BIT(b)
+            );
             offset += 2;
         }
     }
@@ -864,6 +953,7 @@ void Renderer::render(uint8_t* pixels, size_t pitch, double now, bool blend) {
 
     const uint8_t* ilbm_pixels = data.data();
     const auto* ctbl = m_image.ctbl();
+    const auto* sham = m_image.sham();
 
     if (num_planes == 24) {
         if (is_masked) {
@@ -897,39 +987,24 @@ void Renderer::render(uint8_t* pixels, size_t pitch, double now, bool blend) {
             out_index += pitch;
             ilbm_index += ilbm_line_len;
         }
-    } else if (ctbl && num_planes <= 4) {
-        const auto& palettes = ctbl->palettes();
-        size_t out_line_index = 0;
-        size_t ilbm_index = 0;
-        size_t pixel_len = 3 + is_masked;
-
-        // TODO: Can CTBL with HAM and/or color palette cycling exist?
-        // TODO: If SHAM+LACED only change palette ever other line.
-        // const auto* camg = m_image.camg();
-        // auto viewport_mode = camg ? camg->viewport_mode() : 0;
-        // bool laced = viewport_mode & CAMB::LACED;
-
-        for (auto y = 0; y < height; ++ y) {
-            size_t out_index = out_line_index;
-            const auto& palette = palettes[y];
-
-            for (auto x = 0; x < width; ++ x) {
-                auto index = data[ilbm_index];
-                auto color = palette[index];
-
-                pixels[out_index]     = EXTEND_4_TO_8_BIT(color.r());
-                pixels[out_index + 1] = EXTEND_4_TO_8_BIT(color.g());
-                pixels[out_index + 2] = EXTEND_4_TO_8_BIT(color.b());
-
-                ++ ilbm_index;
-                out_index += pixel_len;
-            }
-            out_line_index += pitch;
-        }
     } else if (m_palette) {
         m_cycled_palette.apply_cycles_from(*m_palette, m_cycles, now, blend);
+        size_t notlaced = 1;
+
+        // XXX: are SHAM/CTBL palettes cycled?
+        const std::vector<Palette> *palettes = nullptr;
+        if (ctbl) {
+            palettes = &ctbl->palettes();
+        } else if (sham) {
+            const auto* camg = m_image.camg();
+            auto viewport_mode = camg ? camg->viewport_mode() : 0;
+            bool laced = viewport_mode & CAMG::LACE;
+            notlaced = !laced;
+            palettes = &sham->palettes();
+        }
 
         size_t pixel_len = 3 + is_masked;
+        size_t palette_index = 0;
 
         // TODO: Does HAM without palettes exist? Is then the palette to be assumed all black?
         if (m_ham) {
@@ -943,13 +1018,21 @@ void Renderer::render(uint8_t* pixels, size_t pitch, double now, bool blend) {
             size_t ilbm_index = 0;
             size_t out_line_index = 0;
 
-            for (auto y = 0; y < height; ++ y) {
+            const Palette *palette = &m_cycled_palette;
+
+            for (uint16_t y = 0; y < height; ++ y) {
                 size_t out_index = out_line_index;
                 uint8_t r = 0;
                 uint8_t g = 0;
                 uint8_t b = 0;
 
-                for (auto x = 0; x < width; ++ x) {
+                if (palettes) {
+                    // XXX: do SHAM palletes need to be cycled?
+                    palette = &(*palettes)[palette_index];
+                    palette_index += notlaced | (y & 1);
+                }
+
+                for (uint16_t x = 0; x < width; ++ x) {
                     uint8_t code = data[ilbm_index];
                     uint8_t mode = code >> payload_bits;
                     uint8_t color_index = code & payload_mask;
@@ -957,7 +1040,7 @@ void Renderer::render(uint8_t* pixels, size_t pitch, double now, bool blend) {
                     switch (mode) {
                         case 0:
                         {
-                            auto color = m_cycled_palette[color_index];
+                            auto color = (*palette)[color_index];
                             r = color.r();
                             g = color.g();
                             b = color.b();
@@ -996,12 +1079,13 @@ void Renderer::render(uint8_t* pixels, size_t pitch, double now, bool blend) {
                 out_line_index += pitch;
             }
         } else {
+            // TODO: Is CTBL/SHAM to be used if HAM flag isn't set?
             size_t out_line_index = 0;
             size_t ilbm_index = 0;
 
-            for (auto y = 0; y < height; ++ y) {
+            for (uint16_t y = 0; y < height; ++ y) {
                 size_t out_index = out_line_index;
-                for (auto x = 0; x < width; ++ x) {
+                for (uint16_t x = 0; x < width; ++ x) {
                     auto color = m_cycled_palette[data[ilbm_index]];
     
                     pixels[out_index] = color.r();

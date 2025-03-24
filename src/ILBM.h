@@ -231,13 +231,29 @@ public:
 
 class CTBL {
 private:
-    std::vector<Palette16> m_palettes;
+    std::vector<Palette> m_palettes;
 
 public:
     CTBL() : m_palettes{} {}
 
-    inline const std::vector<Palette16>& palettes() const { return m_palettes; }
-    inline std::vector<Palette16>& palettes() { return m_palettes; }
+    inline const std::vector<Palette>& palettes() const { return m_palettes; }
+    inline std::vector<Palette>& palettes() { return m_palettes; }
+
+    Result read(MemoryReader& reader);
+};
+
+class SHAM {
+private:
+    uint16_t m_version;
+    std::vector<Palette> m_palettes;
+
+public:
+    SHAM() : m_version(0), m_palettes{} {}
+
+    inline uint16_t version() const { return m_version; }
+
+    inline const std::vector<Palette>& palettes() const { return m_palettes; }
+    inline std::vector<Palette>& palettes() { return m_palettes; }
 
     Result read(MemoryReader& reader);
 };
@@ -294,6 +310,7 @@ private:
     std::unique_ptr<BODY> m_body;
     std::unique_ptr<CMAP> m_cmap;
     std::unique_ptr<CTBL> m_ctbl;
+    std::unique_ptr<SHAM> m_sham;
     std::vector<CRNG> m_crngs;
     std::vector<CCRT> m_ccrts;
 
@@ -339,6 +356,7 @@ public:
     inline BODY* body() { return m_body.get(); }
     inline CMAP* cmap() { return m_cmap.get(); }
     inline CTBL* ctbl() { return m_ctbl.get(); }
+    inline SHAM* sham() { return m_sham.get(); }
     inline std::vector<CRNG>& crngs() { return m_crngs; }
     inline std::vector<CCRT>& ccrts() { return m_ccrts; }
 

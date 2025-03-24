@@ -40,6 +40,10 @@ public:
         return m_data;
     }
 
+    inline std::array<Color, 256>& data() {
+        return m_data;
+    }
+
     inline size_t size() const {
         return m_data.size();
     }
