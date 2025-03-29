@@ -29,6 +29,16 @@ static const uint8_t *COLOR_LOOKUP_TABLES[8] = {
 
 using namespace qilbm;
 
+const char *qilbm::result_name(Result result) {
+    switch (result) {
+        case Result_Ok:           return "Ok";
+        case Result_IOError:      return "IO Error";
+        case Result_ParsingError: return "Parsing Error";
+        case Result_Unsupported:  return "Unsupported";
+        default: return "Invalid result";
+    }
+}
+
 const char *qilbm::file_type_name(FileType file_type) {
     switch (file_type) {
         case FileType_ILBM: return "ILBM";

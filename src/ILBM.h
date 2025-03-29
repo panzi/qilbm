@@ -23,6 +23,8 @@ enum Result {
     Result_Unsupported = 3,
 };
 
+const char *result_name(Result result);
+
 enum FileType {
     FileType_ILBM,
     FileType_PBM,
