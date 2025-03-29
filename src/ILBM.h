@@ -17,10 +17,10 @@
 namespace qilbm {
 
 enum Result {
-    Result_Ok = 0,
-    Result_IOError = 1,
+    Result_Ok           = 0,
+    Result_IOError      = 1,
     Result_ParsingError = 2,
-    Result_Unsupported = 3,
+    Result_Unsupported  = 3,
 };
 
 const char *result_name(Result result);
@@ -258,6 +258,128 @@ public:
 
     inline const std::vector<Palette>& palettes() const { return m_palettes; }
     inline std::vector<Palette>& palettes() { return m_palettes; }
+
+    Result read(MemoryReader& reader);
+};
+
+class PCHG {
+private:
+    uint16_t m_compression;
+    uint16_t m_flags;
+    int16_t  m_start_line;
+    uint16_t m_line_count;
+    uint16_t m_changed_lines;
+    uint16_t m_min_reg;
+    uint16_t m_max_reg;
+    uint16_t m_max_changes;
+    uint32_t m_total_changes;
+
+public:
+    class CompHeader {
+    private:
+        uint32_t m_comp_info_size;
+        uint32_t m_original_data_size;
+
+    public:
+        CompHeader() :
+            m_comp_info_size(0),
+            m_original_data_size(0)
+        {}
+
+        inline uint32_t comp_info_size() const { return m_comp_info_size; }
+        inline uint32_t original_data_size() const { return m_original_data_size; }
+
+        Result read(MemoryReader& reader);
+        // TODO
+    };
+
+    class SmallLineChanges {
+    private:
+        uint8_t m_change_count16;
+        uint8_t m_change_count32;
+        std::vector<uint16_t> m_palette_changes;
+
+    public:
+        SmallLineChanges() :
+            m_change_count16(0),
+            m_change_count32(0),
+            m_palette_changes{}
+        {}
+
+        inline uint8_t change_count16() const { return m_change_count16; }
+        inline uint8_t change_count32() const { return m_change_count32; }
+        inline const std::vector<uint16_t>& palette_changes() const { return m_palette_changes; }
+
+        Result read(MemoryReader& reader);
+        // TODO
+    };
+
+    class BigPaletteChange {
+    private:
+        uint16_t m_reg;
+        uint8_t m_alpha;
+        uint8_t m_red;
+        uint8_t m_blue;
+        uint8_t m_green;
+
+    public:
+        BigPaletteChange() :
+            m_reg(0),
+            m_alpha(0),
+            m_red(0),
+            m_blue(0),
+            m_green(0)
+        {}
+
+        inline uint16_t reg() const { return m_reg; }
+        inline uint8_t alpha() const { return m_alpha; }
+        inline uint8_t red() const { return m_red; }
+        inline uint8_t blue() const { return m_blue; }
+        inline uint8_t green() const { return m_green; }
+
+        Result read(MemoryReader& reader);
+        // TODO
+    };
+
+    class BigLineChanges {
+    private:
+        uint16_t m_change_count;
+        std::vector<BigPaletteChange> m_palette_changes;
+
+    public:
+        BigLineChanges() :
+            m_change_count(0),
+            m_palette_changes{}
+        {}
+
+        inline uint16_t change_count() const { return m_change_count; }
+        inline const std::vector<BigPaletteChange>& palette_changes() const { return m_palette_changes; }
+
+        Result read(MemoryReader& reader);
+        // TODO
+    };
+
+    PCHG() :
+        m_compression(0),
+        m_flags(0),
+        m_start_line(0),
+        m_line_count(0),
+        m_changed_lines(0),
+        m_min_reg(0),
+        m_max_reg(0),
+        m_max_changes(0),
+        m_total_changes(0)
+    {}
+
+    inline uint16_t compression() const { return m_compression; }
+    inline uint16_t flags() const { return m_flags; }
+    inline int16_t  start_line() const { return m_start_line; }
+    inline uint16_t line_count() const { return m_line_count; }
+    inline uint16_t changed_lines() const { return m_changed_lines; }
+    inline uint16_t min_reg() const { return m_min_reg; }
+    inline uint16_t max_reg() const { return m_max_reg; }
+    inline uint16_t max_changes() const { return m_max_changes; }
+    inline uint32_t total_changes() const { return m_total_changes; }
 
     Result read(MemoryReader& reader);
 };
