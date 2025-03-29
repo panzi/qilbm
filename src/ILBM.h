@@ -94,6 +94,8 @@ public:
     inline void set_page_height(int16_t page_height) { m_page_height = page_height; }
 
     Result read(MemoryReader& reader);
+
+    void print(std::FILE* file) const;
 };
 
 class BODY {

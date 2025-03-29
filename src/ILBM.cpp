@@ -62,6 +62,26 @@ Result BMHD::read(MemoryReader& reader) {
     return Result_Ok;
 }
 
+
+void BMHD::print(std::FILE* file) const {
+    std::fprintf(file,
+        "BMHD { width: %u, height: %u, x_origin: %d, y_origin: %d, num_planes: %u, mask: %u, compression: %u, flags: %u, trans_color: 0x%06x, x_aspect: %u, y_aspect: %u, page_width: %d, page_height: %d }",
+        m_width,
+        m_height,
+        m_x_origin,
+        m_y_origin,
+        m_num_planes,
+        m_mask,
+        m_compression,
+        m_flags,
+        m_trans_color,
+        m_x_aspect,
+        m_y_aspect,
+        m_page_width,
+        m_page_height
+    );
+}
+
 bool ILBM::can_read(MemoryReader& reader) {
     std::array<char, 4> fourcc;
     if (!reader.read_fourcc(fourcc)) {
@@ -889,7 +909,7 @@ Result Renderer::read(MemoryReader& reader) {
 
     auto num_planes = m_image.bmhd().num_planes();
     const auto* camg = m_image.camg();
-    m_ham = camg && (camg->viewport_mode() & CAMG::HAM) && (num_planes >= 6 && num_planes <= 8);
+    m_ham = camg && (camg->viewport_mode() & CAMG::HAM) && (num_planes >= 4 && num_planes <= 8);
 
     if (!m_image.body() && m_palette) {
         // No image, only a palette: It's a palette file, so draw that palette.
@@ -987,8 +1007,10 @@ void Renderer::render(uint8_t* pixels, size_t pitch, double now, bool blend) {
             out_index += pitch;
             ilbm_index += ilbm_line_len;
         }
-    } else if (m_palette) {
-        m_cycled_palette.apply_cycles_from(*m_palette, m_cycles, now, blend);
+    } else if (m_palette || ctbl || sham) {
+        if (m_palette) {
+            m_cycled_palette.apply_cycles_from(*m_palette, m_cycles, now, blend);
+        }
         size_t notlaced = 1;
 
         // XXX: are SHAM/CTBL palettes cycled?
@@ -1006,6 +1028,8 @@ void Renderer::render(uint8_t* pixels, size_t pitch, double now, bool blend) {
         size_t pixel_len = 3 + is_masked;
         size_t palette_index = 0;
 
+        const Palette *palette = &m_cycled_palette;
+
         // TODO: Does HAM without palettes exist? Is then the palette to be assumed all black?
         if (m_ham) {
             // HAM decoding http://www.etwright.org/lwsdk/docs/filefmts/ilbm.html
@@ -1018,8 +1042,8 @@ void Renderer::render(uint8_t* pixels, size_t pitch, double now, bool blend) {
             size_t ilbm_index = 0;
             size_t out_line_index = 0;
 
-            const Palette *palette = &m_cycled_palette;
-
+            // TODO: different numbers of num_planes are encoded differently?
+            // See: https://en.wikipedia.org/wiki/Hold-And-Modify
             for (uint16_t y = 0; y < height; ++ y) {
                 size_t out_index = out_line_index;
                 uint8_t r = 0;
@@ -1027,7 +1051,7 @@ void Renderer::render(uint8_t* pixels, size_t pitch, double now, bool blend) {
                 uint8_t b = 0;
 
                 if (palettes) {
-                    // XXX: do SHAM palletes need to be cycled?
+                    // XXX: do SHAM palettes need to be cycled?
                     palette = &(*palettes)[palette_index];
                     palette_index += notlaced | (y & 1);
                 }
@@ -1085,8 +1109,15 @@ void Renderer::render(uint8_t* pixels, size_t pitch, double now, bool blend) {
 
             for (uint16_t y = 0; y < height; ++ y) {
                 size_t out_index = out_line_index;
+
+                if (palettes) {
+                    // XXX: do SHAM palettes need to be cycled?
+                    palette = &(*palettes)[palette_index];
+                    palette_index += notlaced | (y & 1);
+                }
+
                 for (uint16_t x = 0; x < width; ++ x) {
-                    auto color = m_cycled_palette[data[ilbm_index]];
+                    auto color = (*palette)[data[ilbm_index]];
     
                     pixels[out_index] = color.r();
                     pixels[out_index + 1] = color.g();
