@@ -1042,11 +1042,13 @@ Result PCHG::read_line_data(MemoryReader& reader) {
                 IO(reader.read_u16be(value));
 
                 uint8_t reg = value >> 12;
-                uint8_t r = EXTEND_4_TO_8_BIT((value & 0x0F00) >> 8);
-                uint8_t g = EXTEND_4_TO_8_BIT((value & 0x00F0) >> 4);
-                uint8_t b = EXTEND_4_TO_8_BIT((value & 0x000F));
+                if (reg >= m_min_reg && reg <= m_max_reg) {
+                    uint8_t r = EXTEND_4_TO_8_BIT((value & 0x0F00) >> 8);
+                    uint8_t g = EXTEND_4_TO_8_BIT((value & 0x00F0) >> 4);
+                    uint8_t b = EXTEND_4_TO_8_BIT((value & 0x000F));
 
-                line_changes.emplace_back(reg, Color(r, g, b));
+                    line_changes.emplace_back(reg, Color(r, g, b));
+                }
             }
 
             for (size_t change_index = 0; change_index < change_count32; ++ change_index) {
@@ -1054,16 +1056,20 @@ Result PCHG::read_line_data(MemoryReader& reader) {
                 IO(reader.read_u16be(value));
 
                 uint8_t reg = (value >> 12) + 16;
-                uint8_t r = EXTEND_4_TO_8_BIT((value & 0x0F00) >> 8);
-                uint8_t g = EXTEND_4_TO_8_BIT((value & 0x00F0) >> 4);
-                uint8_t b = EXTEND_4_TO_8_BIT((value & 0x000F));
+                if (reg >= m_min_reg && reg <= m_max_reg) {
+                    uint8_t r = EXTEND_4_TO_8_BIT((value & 0x0F00) >> 8);
+                    uint8_t g = EXTEND_4_TO_8_BIT((value & 0x00F0) >> 4);
+                    uint8_t b = EXTEND_4_TO_8_BIT((value & 0x000F));
 
-                line_changes.emplace_back(reg, Color(r, g, b));
+                    line_changes.emplace_back(reg, Color(r, g, b));
+                }
             }
         } else {
             uint32_t change_count;
 
             IO(reader.read_u32be(change_count));
+
+            line_changes.reserve(change_count);
 
             for (size_t change_index = 0; change_index < change_count; ++ change_index) {
                 uint16_t reg;
@@ -1078,12 +1084,14 @@ Result PCHG::read_line_data(MemoryReader& reader) {
                 IO(reader.read_u8(b));
                 IO(reader.read_u8(g));
 
-                if (reg > 255) {
-                    LOG_DEBUG("PCHG: Palettes bigger than 256 colors aren't supported, color change was for register %u", reg);
-                    return Result_Unsupported;
-                }
+                if (reg >= m_min_reg && reg <= m_max_reg) {
+                    if (reg > 255) {
+                        LOG_DEBUG("PCHG: Palettes bigger than 256 colors aren't supported, color change was for register %u", reg);
+                        return Result_Unsupported;
+                    }
 
-                line_changes.emplace_back(reg, Color(r, g, b));
+                    line_changes.emplace_back(reg, Color(r, g, b));
+                }
             }
         }
     }
@@ -1298,10 +1306,22 @@ void Renderer::render(uint8_t* pixels, size_t pitch, double now, bool blend) {
         const auto& line_mask = pchg->line_mask();
         const auto& changes = pchg->changes();
         int16_t start_line = pchg->start_line();
-        size_t change_index = 0;
 
         size_t out_line_index = 0;
         size_t ilbm_index = 0;
+
+        // XXX: there is a bug somewhere
+        size_t change_index = 0;
+        for (int32_t line_index = start_line; line_index < 0; ++ line_index) {
+            int32_t mask_index = line_index - start_line;
+
+            if (mask_index >= 0 && (size_t)mask_index < line_mask.size() && line_mask[mask_index]) {
+                for (const auto& change : changes[change_index]) {
+                    m_cycled_palette[change.reg()] = change.color();
+                }
+                ++ change_index;
+            }
+        }
 
         for (uint16_t y = 0; y < height; ++ y) {
             size_t out_index = out_line_index;
