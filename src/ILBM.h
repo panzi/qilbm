@@ -263,6 +263,30 @@ public:
 };
 
 class PCHG {
+public:
+    class ColorChange {
+    private:
+        Color m_color;
+        uint8_t m_reg;
+
+    public:
+        ColorChange() :
+            m_color{},
+            m_reg(0)
+        {}
+
+        ColorChange(uint8_t reg, Color color) :
+            m_color(color),
+            m_reg(reg)
+        {}
+
+        inline const Color& color() const { return m_color; }
+        inline uint8_t reg() const { return m_reg; }
+
+        inline Color& color() { return m_color; }
+        inline void set_reg(uint8_t reg) { m_reg = reg; }
+    };
+
 private:
     uint16_t m_compression;
     uint16_t m_flags;
@@ -271,10 +295,24 @@ private:
     uint16_t m_changed_lines;
     uint16_t m_min_reg;
     uint16_t m_max_reg;
-    uint16_t m_max_changes;
+    uint16_t m_max_changes; // max number of changes on a single line
     uint32_t m_total_changes;
 
+    std::vector<bool> m_line_mask;
+    std::vector<std::vector<ColorChange>> m_changes;
+
 public:
+    enum {
+        COMP_NONE    = 0,
+        COMP_HUFFMAN = 1,
+    };
+
+    enum {
+        FLAG_12BIT     = 1 << 0,
+        FLAG_32BIT     = 1 << 1,
+        FLAG_USE_ALPHA = 1 << 2,
+    };
+
     class CompHeader {
     private:
         uint32_t m_comp_info_size;
@@ -293,72 +331,6 @@ public:
         // TODO
     };
 
-    class SmallLineChanges {
-    private:
-        uint8_t m_change_count16;
-        uint8_t m_change_count32;
-        std::vector<uint16_t> m_palette_changes;
-
-    public:
-        SmallLineChanges() :
-            m_change_count16(0),
-            m_change_count32(0),
-            m_palette_changes{}
-        {}
-
-        inline uint8_t change_count16() const { return m_change_count16; }
-        inline uint8_t change_count32() const { return m_change_count32; }
-        inline const std::vector<uint16_t>& palette_changes() const { return m_palette_changes; }
-
-        Result read(MemoryReader& reader);
-        // TODO
-    };
-
-    class BigPaletteChange {
-    private:
-        uint16_t m_reg;
-        uint8_t m_alpha;
-        uint8_t m_red;
-        uint8_t m_blue;
-        uint8_t m_green;
-
-    public:
-        BigPaletteChange() :
-            m_reg(0),
-            m_alpha(0),
-            m_red(0),
-            m_blue(0),
-            m_green(0)
-        {}
-
-        inline uint16_t reg() const { return m_reg; }
-        inline uint8_t alpha() const { return m_alpha; }
-        inline uint8_t red() const { return m_red; }
-        inline uint8_t blue() const { return m_blue; }
-        inline uint8_t green() const { return m_green; }
-
-        Result read(MemoryReader& reader);
-        // TODO
-    };
-
-    class BigLineChanges {
-    private:
-        uint16_t m_change_count;
-        std::vector<BigPaletteChange> m_palette_changes;
-
-    public:
-        BigLineChanges() :
-            m_change_count(0),
-            m_palette_changes{}
-        {}
-
-        inline uint16_t change_count() const { return m_change_count; }
-        inline const std::vector<BigPaletteChange>& palette_changes() const { return m_palette_changes; }
-
-        Result read(MemoryReader& reader);
-        // TODO
-    };
-
     PCHG() :
         m_compression(0),
         m_flags(0),
@@ -368,7 +340,9 @@ public:
         m_min_reg(0),
         m_max_reg(0),
         m_max_changes(0),
-        m_total_changes(0)
+        m_total_changes(0),
+        m_line_mask{},
+        m_changes{}
     {}
 
     inline uint16_t compression() const { return m_compression; }
@@ -380,8 +354,13 @@ public:
     inline uint16_t max_reg() const { return m_max_reg; }
     inline uint16_t max_changes() const { return m_max_changes; }
     inline uint32_t total_changes() const { return m_total_changes; }
+    inline const std::vector<bool>& line_mask() const { return m_line_mask; }
+    inline const std::vector<std::vector<ColorChange>>& changes() const { return m_changes; }
 
     Result read(MemoryReader& reader);
+    Result read_line_data(MemoryReader& reader);
+
+    void print(std::FILE* file) const;
 };
 
 class TextChunk {
@@ -437,6 +416,7 @@ private:
     std::unique_ptr<CMAP> m_cmap;
     std::unique_ptr<CTBL> m_ctbl;
     std::unique_ptr<SHAM> m_sham;
+    std::unique_ptr<PCHG> m_pchg;
     std::vector<CRNG> m_crngs;
     std::vector<CCRT> m_ccrts;
 
@@ -455,6 +435,8 @@ public:
         m_body{},
         m_cmap{},
         m_ctbl{},
+        m_sham{},
+        m_pchg{},
         m_crngs{},
         m_ccrts{} {}
 
@@ -469,6 +451,8 @@ public:
     inline const BODY* body() const { return m_body.get(); }
     inline const CMAP* cmap() const { return m_cmap.get(); }
     inline const CTBL* ctbl() const { return m_ctbl.get(); }
+    inline const SHAM* sham() const { return m_sham.get(); }
+    inline const PCHG* pchg() const { return m_pchg.get(); }
     inline const std::vector<CRNG>& crngs() const { return m_crngs; }
     inline const std::vector<CCRT>& ccrts() const { return m_ccrts; }
 
@@ -483,6 +467,7 @@ public:
     inline CMAP* cmap() { return m_cmap.get(); }
     inline CTBL* ctbl() { return m_ctbl.get(); }
     inline SHAM* sham() { return m_sham.get(); }
+    inline PCHG* pchg() { return m_pchg.get(); }
     inline std::vector<CRNG>& crngs() { return m_crngs; }
     inline std::vector<CCRT>& ccrts() { return m_ccrts; }
 

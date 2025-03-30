@@ -72,23 +72,36 @@ Result BMHD::read(MemoryReader& reader) {
     return Result_Ok;
 }
 
-
 void BMHD::print(std::FILE* file) const {
     std::fprintf(file,
-        "BMHD { width: %u, height: %u, x_origin: %d, y_origin: %d, num_planes: %u, mask: %u, compression: %u, flags: %u, trans_color: 0x%06x, x_aspect: %u, y_aspect: %u, page_width: %d, page_height: %d }",
-        m_width,
-        m_height,
-        m_x_origin,
-        m_y_origin,
-        m_num_planes,
-        m_mask,
-        m_compression,
-        m_flags,
-        m_trans_color,
-        m_x_aspect,
-        m_y_aspect,
-        m_page_width,
-        m_page_height
+        "BMHD {\n"
+        "    width: %u,\n"
+        "    height: %u,\n"
+        "    x_origin: %d,\n"
+        "    y_origin: %d,\n"
+        "    num_planes: %u,\n"
+        "    mask: %u,\n"
+        "    compression: %u,\n"
+        "    flags: %u,\n"
+        "    trans_color: 0x%06x,\n"
+        "    x_aspect: %u,\n"
+        "    y_aspect: %u,\n"
+        "    page_width: %d,\n"
+        "    page_height: %d\n"
+        "}",
+        (unsigned int)m_width,
+        (unsigned int)m_height,
+        (int)m_x_origin,
+        (int)m_y_origin,
+        (unsigned int)m_num_planes,
+        (unsigned int)m_mask,
+        (unsigned int)m_compression,
+        (unsigned int)m_flags,
+        (unsigned int)m_trans_color,
+        (unsigned int)m_x_aspect,
+        (unsigned int)m_y_aspect,
+        (int)m_page_width,
+        (int)m_page_height
     );
 }
 
@@ -167,6 +180,8 @@ Result ILBM::read(MemoryReader& reader) {
     m_body = nullptr;
     m_cmap = nullptr;
     m_ctbl = nullptr;
+    m_sham = nullptr;
+    m_pchg = nullptr;
     m_crngs.clear();
     m_ccrts.clear();
     m_camg = std::nullopt;
@@ -211,6 +226,9 @@ Result ILBM::read(MemoryReader& reader) {
         } else if (std::memcmp(fourcc.data(), "SHAM", 4) == 0) {
             m_sham = std::make_unique<SHAM>();
             TRY(m_sham->read(chunk_reader));
+        } else if (std::memcmp(fourcc.data(), "PCHG", 4) == 0) {
+            m_pchg = std::make_unique<PCHG>();
+            TRY(m_pchg->read(chunk_reader));
         } else if (std::memcmp(fourcc.data(), "NAME", 4) == 0) {
             NAME& name = m_name.emplace();
             TRY(name.read(chunk_reader));
@@ -845,6 +863,194 @@ Result SHAM::read(MemoryReader& reader) {
     return Result_Ok;
 }
 
+Result PCHG::read(MemoryReader& reader) {
+    IO(reader.read_u16be(m_compression));
+    IO(reader.read_u16be(m_flags));
+    IO(reader.read_i16be(m_start_line));
+    IO(reader.read_u16be(m_line_count));
+    IO(reader.read_u16be(m_changed_lines));
+    IO(reader.read_u16be(m_min_reg));
+    IO(reader.read_u16be(m_max_reg));
+    IO(reader.read_u16be(m_max_changes));
+    IO(reader.read_u32be(m_total_changes));
+
+    if (m_max_reg < m_min_reg) {
+        LOG_DEBUG("PCHG: Max reg may not be smaller than min reg: %u < %u", m_max_reg, m_min_reg);
+        return Result_ParsingError;
+    }
+
+    switch (m_compression) {
+        case COMP_NONE:
+            return this->read_line_data(reader);
+
+        case COMP_HUFFMAN:
+            // TODO: implement huffman de-coding
+            LOG_DEBUG("PCHG: Huffman compression is not yet implemented.");
+            return Result_Unsupported;
+            break;
+
+        default:
+            LOG_DEBUG("PCHG: Unsupported compression value: %d", m_compression);
+            return Result_Unsupported;
+    }
+
+    return Result_Ok;
+}
+
+Result PCHG::read_line_data(MemoryReader& reader) {
+    size_t mask_len = (m_line_count + 31) / 32;
+
+    m_line_mask.clear();
+    m_line_mask.reserve(mask_len * 4 * 8);
+
+    for (size_t index = 0; index < mask_len; ++ index) {
+        uint32_t value;
+        IO(reader.read_u32be(value));
+
+        m_line_mask.emplace_back((value & (1 <<  0)) != 0);
+        m_line_mask.emplace_back((value & (1 <<  1)) != 0);
+        m_line_mask.emplace_back((value & (1 <<  2)) != 0);
+        m_line_mask.emplace_back((value & (1 <<  3)) != 0);
+        m_line_mask.emplace_back((value & (1 <<  4)) != 0);
+        m_line_mask.emplace_back((value & (1 <<  5)) != 0);
+        m_line_mask.emplace_back((value & (1 <<  6)) != 0);
+        m_line_mask.emplace_back((value & (1 <<  7)) != 0);
+
+        m_line_mask.emplace_back((value & (1 <<  8)) != 0);
+        m_line_mask.emplace_back((value & (1 <<  9)) != 0);
+        m_line_mask.emplace_back((value & (1 << 10)) != 0);
+        m_line_mask.emplace_back((value & (1 << 11)) != 0);
+        m_line_mask.emplace_back((value & (1 << 12)) != 0);
+        m_line_mask.emplace_back((value & (1 << 13)) != 0);
+        m_line_mask.emplace_back((value & (1 << 14)) != 0);
+        m_line_mask.emplace_back((value & (1 << 15)) != 0);
+
+        m_line_mask.emplace_back((value & (1 << 16)) != 0);
+        m_line_mask.emplace_back((value & (1 << 17)) != 0);
+        m_line_mask.emplace_back((value & (1 << 18)) != 0);
+        m_line_mask.emplace_back((value & (1 << 19)) != 0);
+        m_line_mask.emplace_back((value & (1 << 20)) != 0);
+        m_line_mask.emplace_back((value & (1 << 21)) != 0);
+        m_line_mask.emplace_back((value & (1 << 22)) != 0);
+        m_line_mask.emplace_back((value & (1 << 23)) != 0);
+
+        m_line_mask.emplace_back((value & (1 << 24)) != 0);
+        m_line_mask.emplace_back((value & (1 << 25)) != 0);
+        m_line_mask.emplace_back((value & (1 << 26)) != 0);
+        m_line_mask.emplace_back((value & (1 << 27)) != 0);
+        m_line_mask.emplace_back((value & (1 << 28)) != 0);
+        m_line_mask.emplace_back((value & (1 << 29)) != 0);
+        m_line_mask.emplace_back((value & (1 << 30)) != 0);
+        m_line_mask.emplace_back((value & (1 << 31)) != 0);
+    }
+
+    m_changes.clear();
+    m_changes.reserve(m_line_count);
+
+    const bool is_small = m_flags & FLAG_12BIT;
+    const bool is_big   = m_flags & FLAG_32BIT;
+
+    if (is_small && is_big) {
+        LOG_DEBUG("PCHG: Both the 12 bit and 32 bit flag are set!");
+        return Result_ParsingError;
+    }
+
+    if (!is_small && !is_big) {
+        LOG_DEBUG("PCHG: Neither the 12 bit or 32 bit flag is set!");
+        return Result_ParsingError;
+    }
+
+    for (size_t line_index = 0; line_index < m_changed_lines; ++ line_index) {
+        auto& line_changes = m_changes.emplace_back();
+
+        if (is_small) {
+            uint8_t change_count16;
+            uint8_t change_count32;
+
+            IO(reader.read_u8(change_count16));
+            IO(reader.read_u8(change_count32));
+
+            line_changes.reserve((size_t)change_count16 + (size_t)change_count32);
+
+            for (size_t change_index = 0; change_index < change_count16; ++ change_index) {
+                uint16_t value;
+                IO(reader.read_u16be(value));
+
+                uint8_t reg = value >> 12;
+                uint8_t r = EXTEND_4_TO_8_BIT((value & 0x0F00) >> 8);
+                uint8_t g = EXTEND_4_TO_8_BIT((value & 0x00F0) >> 4);
+                uint8_t b = EXTEND_4_TO_8_BIT((value & 0x000F));
+
+                line_changes.emplace_back(reg, Color(r, g, b));
+            }
+
+            for (size_t change_index = 0; change_index < change_count32; ++ change_index) {
+                uint16_t value;
+                IO(reader.read_u16be(value));
+
+                uint8_t reg = (value >> 12) + 16;
+                uint8_t r = EXTEND_4_TO_8_BIT((value & 0x0F00) >> 8);
+                uint8_t g = EXTEND_4_TO_8_BIT((value & 0x00F0) >> 4);
+                uint8_t b = EXTEND_4_TO_8_BIT((value & 0x000F));
+
+                line_changes.emplace_back(reg, Color(r, g, b));
+            }
+        } else {
+            uint32_t change_count;
+
+            IO(reader.read_u32be(change_count));
+
+            for (size_t change_index = 0; change_index < change_count; ++ change_index) {
+                uint16_t reg;
+
+                IO(reader.read_u16be(reg));
+
+                uint8_t r, g, b, a;
+
+                // yes, spec says ARBG, not ARGB
+                IO(reader.read_u8(a));
+                IO(reader.read_u8(r));
+                IO(reader.read_u8(b));
+                IO(reader.read_u8(g));
+
+                if (reg > 255) {
+                    LOG_DEBUG("PCHG: Palettes bigger than 256 colors aren't supported, color change was for register %u", reg);
+                    return Result_Unsupported;
+                }
+
+                line_changes.emplace_back(reg, Color(r, g, b));
+            }
+        }
+    }
+
+    return Result_Ok;
+}
+
+void PCHG::print(std::FILE* file) const {
+    fprintf(file,
+        "PCHG {\n"
+        "    compression: %u,\n"
+        "    flags: %u,\n"
+        "    start_line: %d,\n"
+        "    line_count: %u,\n"
+        "    changed_lines: %u,\n"
+        "    min_reg: %u,\n"
+        "    max_reg: %u,\n"
+        "    max_changes: %u,\n"
+        "    total_changes: %u,\n"
+        "}",
+        (unsigned int)m_compression,
+        (unsigned int)m_flags,
+        (int)m_start_line,
+        (unsigned int)m_line_count,
+        (unsigned int)m_changed_lines,
+        (unsigned int)m_min_reg,
+        (unsigned int)m_max_reg,
+        (unsigned int)m_max_changes,
+        (unsigned int)m_total_changes
+    );
+}
+
 void ILBM::get_cycles(std::vector<Cycle>& cycles) const {
     for (auto& crng : this->crngs()) {
         auto low = crng.low();
@@ -917,14 +1123,14 @@ Result Renderer::read(MemoryReader& reader) {
     m_image.get_cycles(m_cycles);
     m_palette = m_image.palette();
 
-    auto num_planes = m_image.bmhd().num_planes();
+    auto& bmhd = m_image.bmhd();
+    auto num_planes = bmhd.num_planes();
     const auto* camg = m_image.camg();
     m_ham = camg && (camg->viewport_mode() & CAMG::HAM) && (num_planes >= 4 && num_planes <= 8);
 
     if (!m_image.body() && m_palette) {
         // No image, only a palette: It's a palette file, so draw that palette.
         auto& body = m_image.make_body();
-        auto& bmhd = m_image.bmhd();
 
         const uint16_t margin = 1;
         const uint16_t inner_square_size = 4;
@@ -984,6 +1190,7 @@ void Renderer::render(uint8_t* pixels, size_t pitch, double now, bool blend) {
     const uint8_t* ilbm_pixels = data.data();
     const auto* ctbl = m_image.ctbl();
     const auto* sham = m_image.sham();
+    const auto* pchg = m_image.pchg();
 
     if (num_planes == 24) {
         if (is_masked) {
@@ -1016,6 +1223,44 @@ void Renderer::render(uint8_t* pixels, size_t pitch, double now, bool blend) {
             std::memcpy(pixels + out_index, ilbm_pixels + ilbm_index, ilbm_line_len);
             out_index += pitch;
             ilbm_index += ilbm_line_len;
+        }
+    } else if (pchg) {
+        if (m_palette) {
+            m_cycled_palette = *m_palette;
+        }
+
+        size_t pixel_len = 3 + is_masked;
+        const auto& line_mask = pchg->line_mask();
+        const auto& changes = pchg->changes();
+        int16_t start_line = pchg->start_line();
+        size_t change_index = 0;
+
+        size_t out_line_index = 0;
+        size_t ilbm_index = 0;
+
+        for (uint16_t y = 0; y < height; ++ y) {
+            size_t out_index = out_line_index;
+
+            int32_t mask_index = (int32_t)y - start_line + 1;
+
+            if (mask_index >= 0 && (size_t)mask_index < line_mask.size() && line_mask[mask_index]) {
+                for (const auto& change : changes[change_index]) {
+                    m_cycled_palette[change.reg()] = change.color();
+                }
+                ++ change_index;
+            }
+
+            for (uint16_t x = 0; x < width; ++ x) {
+                auto color = m_cycled_palette[data[ilbm_index]];
+
+                pixels[out_index] = color.r();
+                pixels[out_index + 1] = color.g();
+                pixels[out_index + 2] = color.b();
+
+                ++ ilbm_index;
+                out_index += pixel_len;
+            }
+            out_line_index += pitch;
         }
     } else if (m_palette || ctbl || sham) {
         if (m_palette) {
