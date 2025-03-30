@@ -5,6 +5,7 @@
 #include <cassert>
 
 #define GET_UINT16(BUF, INDEX) (((uint16_t)((BUF)[(INDEX)]) << 8) | (uint16_t)((BUF)[(INDEX) + 1]))
+#define GET_UINT32(PTR) (((uint32_t)((PTR)[0]) << 24) | ((uint32_t)((PTR)[1]) << 16) | ((uint32_t)((PTR)[2]) << 8) | (uint32_t)((PTR)[3]))
 #define EXTEND_4_TO_8_BIT(X) ((X) * 17)
 
 // generated with make_lookup_tables.py
@@ -884,11 +885,72 @@ Result PCHG::read(MemoryReader& reader) {
             return this->read_line_data(reader);
 
         case COMP_HUFFMAN:
+        {
             // TODO: implement huffman de-coding
-            LOG_DEBUG("PCHG: Huffman compression is not yet implemented.");
-            return Result_Unsupported;
-            break;
+            uint32_t comp_info_size;
+            uint32_t original_data_size;
 
+            IO(reader.read_u32be(comp_info_size));
+            IO(reader.read_u32be(original_data_size));
+
+            std::vector<uint8_t> decompr {};
+            decompr.reserve(original_data_size);
+
+            uint32_t index = 0;
+            uint32_t bits = 0;
+            uint32_t current = 0;
+            const uint8_t *startptr = reader.current();
+            const uint8_t *endptr = reader.end();
+            const uint8_t *tree = startptr + comp_info_size - 2;
+            const uint8_t *source = startptr + comp_info_size;
+            const uint8_t *ptr = tree;
+
+            while (index < original_data_size) {
+                if (!bits) {
+                    if (source + 4 > endptr) {
+                        LOG_DEBUG("Source buffer overflow while decompressing");
+                        return Result_ParsingError;
+                    }
+                    current = GET_UINT32(source);
+                    source += 4;
+                    bits = 32;
+                }
+                if (current & 0x80000000) {
+                    int16_t value = (int16_t)GET_UINT16(ptr, 0);
+                    if (value >= 0) {
+                        decompr.emplace_back((uint8_t)value);
+                        ++ index;
+                        ptr = tree;
+                    } else {
+                        ptr += value;
+
+                        if (ptr < startptr) {
+                            LOG_DEBUG("Huffman tree underflow while decompressing");
+                            return Result_ParsingError;
+                        }
+                    }
+                } else {
+                    ptr -= 2;
+                    if (ptr < startptr) {
+                        LOG_DEBUG("Huffman tree underflow while decompressing");
+                        return Result_ParsingError;
+                    }
+                    int16_t value = (int16_t)GET_UINT16(ptr, 0);
+                    if (value > 0 && (value & 0x100)) {
+                        decompr.emplace_back((uint8_t)value);
+                        ++ index;
+                        ptr = tree;
+                    }
+                }
+                current <<= 1;
+                -- bits;
+            }
+
+            decompr.resize(original_data_size);
+
+            MemoryReader line_reader(decompr.data(), original_data_size);
+            return this->read_line_data(line_reader);
+        }
         default:
             LOG_DEBUG("PCHG: Unsupported compression value: %d", m_compression);
             return Result_Unsupported;
@@ -943,6 +1005,9 @@ Result PCHG::read_line_data(MemoryReader& reader) {
         m_line_mask.emplace_back((value & (1 << 30)) != 0);
         m_line_mask.emplace_back((value & (1 << 31)) != 0);
     }
+
+    // truncate padding bits, if there are any
+    m_line_mask.resize(m_line_count, false);
 
     m_changes.clear();
     m_changes.reserve(m_line_count);
