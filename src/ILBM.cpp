@@ -146,7 +146,7 @@ bool ILBM::can_read(MemoryReader& reader) {
     return true;
 }
 
-Result ILBM::read(MemoryReader& reader) {
+Result ILBM::read(MemoryReader& reader, bool only_metadata) {
     std::array<char, 4> fourcc;
     IO(reader.read_fourcc(fourcc));
 
@@ -204,48 +204,46 @@ Result ILBM::read(MemoryReader& reader) {
         if (std::memcmp(fourcc.data(), "BMHD", 4) == 0) {
             TRY(m_bmhd.read(chunk_reader));
         } else if (std::memcmp(fourcc.data(), "BODY", 4) == 0) {
-            m_body = std::make_unique<BODY>();
-            TRY(m_body->read(chunk_reader, m_file_type, m_bmhd));
+            if (!only_metadata) {
+                m_body = std::make_unique<BODY>();
+                TRY(m_body->read(chunk_reader, m_file_type, m_bmhd));
+            }
         } else if (std::memcmp(fourcc.data(), "CMAP", 4) == 0) {
             m_cmap = std::make_unique<CMAP>();
-            TRY(m_cmap->read(chunk_reader));
+            PASS_IF(only_metadata, m_cmap->read(chunk_reader), { m_cmap = nullptr; });
         } else if (std::memcmp(fourcc.data(), "CRNG", 4) == 0) {
             CRNG& crng = m_crngs.emplace_back();
-            TRY(crng.read(chunk_reader));
+            PASS_IF(only_metadata, crng.read(chunk_reader), { m_crngs.pop_back(); });
         } else if (std::memcmp(fourcc.data(), "CCRT", 4) == 0) {
             CCRT& ccrt = m_ccrts.emplace_back();
-            TRY(ccrt.read(chunk_reader));
+            PASS_IF(only_metadata, ccrt.read(chunk_reader), { m_ccrts.pop_back(); });
         } else if (std::memcmp(fourcc.data(), "CAMG", 4) == 0) {
             CAMG& camg = m_camg.emplace();
-            TRY(camg.read(chunk_reader));
+            PASS_IF(only_metadata, camg.read(chunk_reader), { m_camg = std::nullopt; });
         } else if (std::memcmp(fourcc.data(), "DYCP", 4) == 0) {
             DYCP& dycp = m_dycp.emplace();
-            TRY(dycp.read(chunk_reader));
+            PASS_IF(only_metadata, dycp.read(chunk_reader), { m_dycp = std::nullopt; });
         } else if (std::memcmp(fourcc.data(), "CTBL", 4) == 0) {
             m_ctbl = std::make_unique<CTBL>();
-            TRY(m_ctbl->read(chunk_reader));
+            PASS_IF(only_metadata, m_ctbl->read(chunk_reader), { m_ctbl = nullptr; });
         } else if (std::memcmp(fourcc.data(), "SHAM", 4) == 0) {
             m_sham = std::make_unique<SHAM>();
-            TRY(m_sham->read(chunk_reader));
+            PASS_IF(only_metadata, m_sham->read(chunk_reader), { m_sham = nullptr; });
         } else if (std::memcmp(fourcc.data(), "PCHG", 4) == 0) {
             m_pchg = std::make_unique<PCHG>();
-            TRY(m_pchg->read(chunk_reader));
+            PASS_IF(only_metadata, m_pchg->read(chunk_reader), { m_pchg = nullptr; });
         } else if (std::memcmp(fourcc.data(), "NAME", 4) == 0) {
             NAME& name = m_name.emplace();
-            TRY(name.read(chunk_reader));
-            LOG_DEBUG("NAME: \"%s\"", name.content().c_str());
+            PASS_IF(only_metadata, name.read(chunk_reader), { m_name = std::nullopt; });
         } else if (std::memcmp(fourcc.data(), "AUTH", 4) == 0) {
             AUTH& auth = m_auth.emplace();
-            TRY(auth.read(chunk_reader));
-            LOG_DEBUG("AUTH: \"%s\"", auth.content().c_str());
+            PASS_IF(only_metadata, auth.read(chunk_reader), { m_auth = std::nullopt; });
         } else if (std::memcmp(fourcc.data(), "ANNO", 4) == 0) {
             ANNO& anno = m_anno.emplace();
-            TRY(anno.read(chunk_reader));
-            LOG_DEBUG("ANNO: \"%s\"", anno.content().c_str());
+            PASS_IF(only_metadata, anno.read(chunk_reader), { m_anno = std::nullopt; });
         } else if (std::memcmp(fourcc.data(), "(c) ", 4) == 0) {
             Copy& copy = m_copy.emplace();
-            TRY(copy.read(chunk_reader));
-            LOG_DEBUG("(c) : \"%s\"", copy.content().c_str());
+            PASS_IF(only_metadata, copy.read(chunk_reader), { m_copy = std::nullopt; });
         } else {
             // ignore unknown chunk
             // TODO: HAM, SHAM, ...
@@ -1010,7 +1008,7 @@ Result PCHG::read_line_data(MemoryReader& reader) {
     m_line_mask.resize(m_line_count, false);
 
     m_changes.clear();
-    m_changes.reserve(m_line_count);
+    m_changes.reserve(m_changed_lines);
 
     const bool is_small = m_flags & FLAG_12BIT;
     const bool is_big   = m_flags & FLAG_32BIT;

@@ -492,7 +492,8 @@ public:
 
     inline void clear_body() { m_body = nullptr; }
 
-    Result read(MemoryReader& reader);
+    Result read(MemoryReader& reader, bool only_metadata);
+    Result read(MemoryReader& reader) { return read(reader, false); }
 
     static bool can_read(MemoryReader& reader);
 

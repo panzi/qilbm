@@ -8,14 +8,27 @@
 #define STR_INTERN(EXPR) #EXPR
 #define STR(EXPR) STR_INTERN(EXPR)
 
-#define TRY(RESULT) {                         \
-        qilbm::Result __result = (RESULT);    \
-        if (__result != qilbm::Result_Ok) {   \
-            LOG_DEBUG("%s: %s",               \
-                qilbm::result_name(__result), \
-                STR(RESULT));                 \
-            return __result;                  \
-        }                                     \
+#define TRY(RESULT) {                               \
+        qilbm::Result __qilbm_result = (RESULT);    \
+        if (__qilbm_result != qilbm::Result_Ok) {   \
+            LOG_DEBUG("%s: %s",                     \
+                qilbm::result_name(__qilbm_result), \
+                STR(RESULT));                       \
+            return __qilbm_result;                  \
+        }                                           \
+    }
+
+#define PASS_IF(COND, RESULT, ...) {                \
+        qilbm::Result __qilbm_result = (RESULT);    \
+        if (__qilbm_result != qilbm::Result_Ok) {   \
+            LOG_DEBUG("%s: %s",                     \
+                qilbm::result_name(__qilbm_result), \
+                STR(RESULT));                       \
+            { __VA_ARGS__ }                         \
+            if (!(COND)) {                          \
+                return __qilbm_result;              \
+            }                                       \
+        }                                           \
     }
 
 #define IO(OK) \

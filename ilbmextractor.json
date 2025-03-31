@@ -1,0 +1,8 @@
+{
+    "Name": "ILBMExtractor",
+    "Id": "com.github.panzi.ilbmextractor",
+    "MimeTypes": {
+        "image/x-ilbm": { "Version": "0.0" },
+        "image/x-lbm" : { "Version": "0.0" }
+    }
+}
