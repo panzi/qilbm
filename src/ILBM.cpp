@@ -884,7 +884,6 @@ Result PCHG::read(MemoryReader& reader) {
 
         case COMP_HUFFMAN:
         {
-            // TODO: implement huffman de-coding
             uint32_t comp_info_size;
             uint32_t original_data_size;
 
