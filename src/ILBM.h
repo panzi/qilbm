@@ -152,6 +152,7 @@ public:
     inline uint32_t viewport_mode() const { return m_viewport_mode; }
 
     Result read(MemoryReader& reader);
+    void print(std::FILE* file) const;
 };
 
 class CRNG {

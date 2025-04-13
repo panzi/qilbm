@@ -366,6 +366,43 @@ Result CAMG::read(MemoryReader& reader) {
     return Result_Ok;
 }
 
+void CAMG::print(std::FILE* file) const {
+    std::fprintf(file,
+        "CAMG {\n"
+        "    viewport_mode: 0x%x", (unsigned int)m_viewport_mode);
+
+    if (m_viewport_mode & (CAMG::EHB | CAMG::HAM | CAMG::HIRES | CAMG::LACE)) {
+        std::fprintf(file, " (");
+
+        const static struct {
+            uint16_t flag;
+            const char *name;
+        } flag_descrs[] = {
+            { CAMG::EHB, "EHB" },
+            { CAMG::HAM, "HAM" },
+            { CAMG::HIRES, "HIRES" },
+            { CAMG::LACE, "LACE" },
+            { 0, NULL },
+        };
+
+        bool first = true;
+        for (const auto* descr = flag_descrs; descr->flag; ++ descr) {
+            if (m_viewport_mode & descr->flag) {
+                if (first) {
+                    first = false;
+                    std::fprintf(file, "%s", descr->name);
+                } else {
+                    std::fprintf(file, ", %s", descr->name);
+                }
+            }
+        }
+
+        std::fprintf(file, ")");
+    }
+
+    std::fprintf(file, "\n}");
+}
+
 Result CRNG::read(MemoryReader& reader) {
     if (reader.remaining()< CRNG::SIZE) {
         LOG_DEBUG("truncated CRNG chunk: %zu < %u", reader.remaining(), CRNG::SIZE);
@@ -1097,10 +1134,44 @@ Result PCHG::read_line_data(MemoryReader& reader) {
 }
 
 void PCHG::print(std::FILE* file) const {
-    fprintf(file,
+    std::fprintf(file,
         "PCHG {\n"
         "    compression: %u,\n"
-        "    flags: %u,\n"
+        "    flags: 0x%x",
+        (unsigned int)m_compression,
+        (unsigned int)m_flags
+    );
+
+    if (m_flags & (PCHG::FLAG_12BIT | PCHG::FLAG_32BIT | PCHG::FLAG_USE_ALPHA)) {
+        std::fprintf(file, " (");
+
+        const static struct {
+            uint16_t flag;
+            const char *name;
+        } flag_descrs[] = {
+            { PCHG::FLAG_12BIT, "12BIT" },
+            { PCHG::FLAG_32BIT, "32BIT" },
+            { PCHG::FLAG_USE_ALPHA, "USE_ALPHA" },
+            { 0, NULL },
+        };
+
+        bool first = true;
+        for (const auto* descr = flag_descrs; descr->flag; ++ descr) {
+            if (m_flags & descr->flag) {
+                if (first) {
+                    first = false;
+                    std::fprintf(file, "%s", descr->name);
+                } else {
+                    std::fprintf(file, ", %s", descr->name);
+                }
+            }
+        }
+
+        std::fprintf(file, ")");
+    }
+
+    std::fprintf(file,
+        ",\n"
         "    start_line: %d,\n"
         "    line_count: %u,\n"
         "    changed_lines: %u,\n"
@@ -1109,8 +1180,6 @@ void PCHG::print(std::FILE* file) const {
         "    max_changes: %u,\n"
         "    total_changes: %u,\n"
         "}",
-        (unsigned int)m_compression,
-        (unsigned int)m_flags,
         (int)m_start_line,
         (unsigned int)m_line_count,
         (unsigned int)m_changed_lines,
