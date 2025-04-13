@@ -314,24 +314,6 @@ public:
         FLAG_USE_ALPHA = 1 << 2,
     };
 
-    class CompHeader {
-    private:
-        uint32_t m_comp_info_size;
-        uint32_t m_original_data_size;
-
-    public:
-        CompHeader() :
-            m_comp_info_size(0),
-            m_original_data_size(0)
-        {}
-
-        inline uint32_t comp_info_size() const { return m_comp_info_size; }
-        inline uint32_t original_data_size() const { return m_original_data_size; }
-
-        Result read(MemoryReader& reader);
-        // TODO
-    };
-
     PCHG() :
         m_compression(0),
         m_flags(0),
