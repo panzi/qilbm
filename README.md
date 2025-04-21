@@ -9,7 +9,8 @@ QImageIO Plugin to read and display ILBM files, including color cycle animations
   * [x] <= 8 bit planes
   * [x] non-indexed images (> 8, <= 24 bit planes)
   * [x] HAM
-  * [ ] SHAM
+  * [x] SHAM
+  * [ ] PCHG (works for some images, buggy for others)
 * [x] Display static indexed ILBM files
 * [x] Display color cycle animations
 * [x] Display non-indexed images
